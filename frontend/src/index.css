@@ -1,0 +1,29 @@
+@import "leaflet/dist/leaflet.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: #F5F5F5;
+  color: #333333;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.sx__calendar {
+  border-radius: 12px !important;
+  overflow: hidden;
+}
+
+.leaflet-container {
+  border-radius: 12px;
+}
