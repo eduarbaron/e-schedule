@@ -14,8 +14,8 @@ import {
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { CalendarDays, FileText } from 'lucide-react';
-import { useAsignaciones, useCelulas, useClases, useSedes } from '../api/hooks';
-import type { Asignacion, Celula, ClaseAcademica, Sede } from '../types';
+import { useAsignaciones, useCelulas, useClases, useProgramaSedes, useProgramas, useSedes } from '../api/hooks';
+import type { Asignacion, Celula, ClaseAcademica, Programa, Sede } from '../types';
 import { DIA_LABELS } from '../types';
 import { usePeriodoTrabajo } from '../context/PeriodoContext';
 import { printReport } from '../utils/reportExport';
@@ -146,19 +146,24 @@ export function HorarioSede() {
   const { periodoId: periodoFinal, periodoSeleccionado } = usePeriodoTrabajo();
   const { data: sedes = [] } = useSedes();
   const { data: celulas = [] } = useCelulas();
+  const { data: programas = [] } = useProgramas();
   const [zonaId, setZonaId] = useState('');
   const [sedeId, setSedeId] = useState('');
+  const [programaId, setProgramaId] = useState('');
+  const { data: sedesPrograma = [] } = useProgramaSedes(programaId);
   const [semestre, setSemestre] = useState('');
   const [semana, setSemana] = useState<'todas' | 'A' | 'B'>('todas');
   const [vista, setVista] = useState<'clases' | 'asignaciones' | 'ambas'>('ambas');
 
   const { data: clases = [], isLoading: loadingClases } = useClases({
     ...(periodoFinal ? { periodo: periodoFinal } : {}),
+    ...(programaId ? { programa_id: programaId } : {}),
     ...(sedeId ? { sede_id: sedeId } : {}),
     ...(semestre ? { semestre } : {}),
   });
   const { data: asignaciones = [], isLoading: loadingAsignaciones } = useAsignaciones({
     ...(periodoFinal ? { periodo: periodoFinal } : {}),
+    ...(programaId ? { programa_id: programaId } : {}),
     ...(sedeId ? { sede_id: sedeId } : {}),
   });
 
@@ -171,25 +176,38 @@ export function HorarioSede() {
     return map;
   }, [clases, asignaciones]);
 
+  const sedesBase = useMemo(() => {
+    return programaId && (sedesPrograma as Sede[]).length > 0
+      ? (sedesPrograma as Sede[])
+      : (sedes as Sede[]);
+  }, [programaId, sedesPrograma, sedes]);
+
+  const zonasDisponibles = useMemo(() => {
+    const zonaIds = new Set(sedesBase.map(sede => sede.celula_id).filter(Boolean));
+    return (celulas as Celula[]).filter(celula => !programaId || zonaIds.has(celula.id));
+  }, [celulas, sedesBase, programaId]);
+
   const sedesFiltradas = useMemo(() => {
-    return (sedes as Sede[]).filter(sede => !zonaId || sede.celula_id === zonaId);
-  }, [sedes, zonaId]);
+    return sedesBase.filter(sede => !zonaId || sede.celula_id === zonaId);
+  }, [sedesBase, zonaId]);
 
   const sedeIdsFiltradas = useMemo(() => new Set(sedesFiltradas.map(sede => sede.id)), [sedesFiltradas]);
 
   const clasesFiltradas = useMemo(() => {
     return (clases as ClaseAcademica[]).filter(clase =>
       (!zonaId || sedeIdsFiltradas.has(clase.sede_id)) &&
+      (!programaId || clase.programa_id === programaId) &&
       (!semestre || String(clase.semestre ?? '') === semestre)
     );
-  }, [clases, zonaId, sedeIdsFiltradas, semestre]);
+  }, [clases, zonaId, sedeIdsFiltradas, programaId, semestre]);
 
   const asignacionesFiltradas = useMemo(() => {
     return (asignaciones as Asignacion[]).filter(asignacion =>
       (!zonaId || sedeIdsFiltradas.has(asignacion.sede_id)) &&
+      (!programaId || asignacion.programa_id === programaId) &&
       (!semestre || String(asignacion.semestre ?? '') === semestre)
     );
-  }, [asignaciones, zonaId, sedeIdsFiltradas, semestre]);
+  }, [asignaciones, zonaId, sedeIdsFiltradas, programaId, semestre]);
 
   const semestreOptions = useMemo(() => {
     const valores = new Set<number>();
@@ -228,6 +246,7 @@ export function HorarioSede() {
       subtitulo: asignacion.docente_nombre ?? 'Docente sin nombre',
       detalle: `G${asignacion.grupo} · ${calendarioLabel(asignacion.calendario)}`,
       docente: asignacion.docente_nombre,
+      programa: asignacion.programa_nombre,
       docenteCelula: asignacion.docente_celula_nombre ?? asignacion.docente_celula_id ?? null,
       sedeCelula: asignacion.sede_celula_nombre ?? asignacion.celula_nombre ?? asignacion.sede_celula_id ?? null,
       modo: asignacion.modo,
@@ -237,7 +256,7 @@ export function HorarioSede() {
       hora_fin: asignacion.hora_fin,
       calendario: asignacion.calendario,
       grupo: asignacion.grupo,
-      colorKey: asignacion.materia_id,
+      colorKey: asignacion.programa_id ?? asignacion.materia_id,
       semestre: asignacion.semestre,
     }));
 
@@ -310,6 +329,7 @@ export function HorarioSede() {
   const isLoading = loadingClases || loadingAsignaciones;
   const sedeSeleccionada = (sedes as Sede[]).find(s => s.id === sedeId);
   const zonaSeleccionada = (celulas as Celula[]).find(c => c.id === zonaId);
+  const programaSeleccionado = (programas as Programa[]).find(p => p.id === programaId);
   const semanaLabel = semana === 'todas' ? 'Todas' : `Semana ${semana}`;
   const vistaLabel = vista === 'ambas' ? 'Clases y asignaciones' : vista === 'clases' ? 'Clases' : 'Asignaciones';
 
@@ -377,6 +397,7 @@ export function HorarioSede() {
       meta: [
         { label: 'Zona', value: zonaSeleccionada?.nombre },
         { label: 'Sede', value: sedeSeleccionada?.nombre },
+        { label: 'Programa', value: programaSeleccionado?.nombre },
         { label: 'Semestre', value: semestre ? `Semestre ${semestre}` : undefined },
         { label: 'Semana', value: semanaLabel },
         { label: 'Vista', value: vistaLabel },
@@ -432,9 +453,23 @@ export function HorarioSede() {
       <Paper p="md" radius="md" withBorder>
         <Group grow align="flex-end">
           <Select
+            label="Programa"
+            placeholder="Todos"
+            data={(programas as Programa[]).map(p => ({ value: p.id, label: p.nombre }))}
+            value={programaId || null}
+            onChange={v => {
+              setProgramaId(v || '');
+              setZonaId('');
+              setSedeId('');
+              setSemestre('');
+            }}
+            searchable
+            clearable
+          />
+          <Select
             label="Zona"
             placeholder="Todas"
-            data={(celulas as Celula[]).map(c => ({ value: c.id, label: c.nombre }))}
+            data={zonasDisponibles.map(c => ({ value: c.id, label: c.nombre }))}
             value={zonaId || null}
             onChange={v => {
               const nextZona = v || '';

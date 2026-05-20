@@ -94,6 +94,7 @@ programas.put('/:id/sedes', async (c) => {
 programas.post('/', async (c) => {
   const body = await c.req.json();
   const { nombre, descripcion, es_prioritario, orden_prioridad, tipo_ciclo, departamento_id, sede_ids } = body;
+  const numeroSemestres = Math.max(1, Math.min(10, Number(body.numero_semestres ?? 10)));
   if (!nombre) return c.json({ error: 'nombre es requerido' }, 400);
   if (tipo_ciclo && !['semanal', 'quincenal'].includes(tipo_ciclo)) {
     return c.json({ error: 'tipo_ciclo debe ser semanal o quincenal' }, 400);
@@ -112,8 +113,8 @@ programas.post('/', async (c) => {
 
   await c.env.e_schedule_db.batch([
     c.env.e_schedule_db
-      .prepare('INSERT INTO programas (id, nombre, descripcion, es_prioritario, orden_prioridad, tipo_ciclo, departamento_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .bind(id, nombre, descripcion ?? null, es_prioritario ? 1 : 0, orden_prioridad ?? 99, tipo_ciclo ?? 'quincenal', departamento_id ?? null),
+      .prepare('INSERT INTO programas (id, nombre, descripcion, es_prioritario, orden_prioridad, tipo_ciclo, departamento_id, numero_semestres) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(id, nombre, descripcion ?? null, es_prioritario ? 1 : 0, orden_prioridad ?? 99, tipo_ciclo ?? 'quincenal', departamento_id ?? null, numeroSemestres),
     ...uniqueSedeIds.map(sedeId =>
       c.env.e_schedule_db
         .prepare('INSERT INTO sede_programa (sede_id, programa_id) VALUES (?, ?)')
@@ -131,6 +132,7 @@ programas.put('/:id', async (c) => {
   const { id } = c.req.param();
   const body = await c.req.json();
   const { nombre, descripcion, es_prioritario, orden_prioridad, tipo_ciclo, departamento_id, sede_ids } = body;
+  const numeroSemestres = Math.max(1, Math.min(10, Number(body.numero_semestres ?? 10)));
 
   const existing = await c.env.e_schedule_db
     .prepare('SELECT id FROM programas WHERE id = ?')
@@ -140,8 +142,8 @@ programas.put('/:id', async (c) => {
 
   const statements = [
     c.env.e_schedule_db
-      .prepare('UPDATE programas SET nombre = ?, descripcion = ?, es_prioritario = ?, orden_prioridad = ?, tipo_ciclo = ?, departamento_id = ? WHERE id = ?')
-      .bind(nombre, descripcion ?? null, es_prioritario ? 1 : 0, orden_prioridad ?? 99, tipo_ciclo ?? 'quincenal', departamento_id ?? null, id),
+      .prepare('UPDATE programas SET nombre = ?, descripcion = ?, es_prioritario = ?, orden_prioridad = ?, tipo_ciclo = ?, departamento_id = ?, numero_semestres = ? WHERE id = ?')
+      .bind(nombre, descripcion ?? null, es_prioritario ? 1 : 0, orden_prioridad ?? 99, tipo_ciclo ?? 'quincenal', departamento_id ?? null, numeroSemestres, id),
   ];
   if (Array.isArray(sede_ids)) {
     const uniqueSedeIds = [...new Set(sede_ids.filter((sedeId): sedeId is string => typeof sedeId === 'string' && sedeId.length > 0))];

@@ -25,7 +25,6 @@ const JORNADA_SABADO = [
   { inicio: 7, fin: 13 },
   { inicio: 14, fin: 17 },
 ] as const;
-const APELLIDOS = ['Ramos', 'Montes', 'Pardo', 'Salcedo', 'Barrios', 'Mendoza', 'Hoyos', 'Arrieta'];
 const PILOT_REQUIRED_TABLES = [
   'periodos',
   'programas',
@@ -160,6 +159,11 @@ async function clearPilotAssignments(db: D1Database) {
       `).bind(`${DEV_ASIG_PREFIX}-%`, `${DEV_DOC_PREFIX}-%`, PILOT_PROGRAMA_ID)
     );
   }
+  if (existingTables.has('clases')) {
+    statements.push(
+      db.prepare(`UPDATE clases SET estado = 'pendiente' WHERE programa_id = ?`).bind(PILOT_PROGRAMA_ID)
+    );
+  }
   if (existingTables.has('docentes')) {
     statements.push(db.prepare(`UPDATE docentes SET horas_asignadas = 0 WHERE id LIKE ?`).bind(`${DEV_DOC_PREFIX}-%`));
   }
@@ -240,22 +244,34 @@ async function populatePilotTeachers(db: D1Database, materias: Materia[], sedes:
 
   const celulas = [...new Set(sedes.map(s => s.celula_id).filter(Boolean))] as string[];
   const statements: D1PreparedStatement[] = [];
-  const docentesPlan: { celulaId: string; departamentoId: string | null; etiqueta: string }[] = [];
+  const docentesPlan: { celulaId: string; departamentoId: string | null; materiaNombre: string }[] = [];
 
-  const etiquetasPorDepartamento: Record<string, string> = {
+  const materiasPorDepartamento = materias.reduce<Record<string, Materia[]>>((acc, materia) => {
+    const departamentoId = materia.departamento_id ?? 'sin-departamento';
+    acc[departamentoId] = acc[departamentoId] ?? [];
+    acc[departamentoId].push(materia);
+    return acc;
+  }, {});
+  Object.values(materiasPorDepartamento).forEach(items => {
+    items.sort((a, b) => (a.semestre ?? 0) - (b.semestre ?? 0) || a.nombre.localeCompare(b.nombre));
+  });
+
+  const materiaFallbackPorDepartamento: Record<string, string> = {
     'dep-ing-sis': 'Tecnologica',
     'dep-bas-mat': 'Matematica',
     'dep-edu-esp': 'Comunicativa',
     'dep-edu-ing': 'Ingles',
-    'dep-edu-lic': 'Aprendizaje',
+    'dep-edu-lic': 'Aprendizaje y Emprendimiento',
   };
 
   for (const [departamentoId, cantidad] of Object.entries(PILOT_DOCENTES_POR_DEPARTAMENTO)) {
+    const materiasDepartamento = materiasPorDepartamento[departamentoId] ?? [];
     for (let n = 0; n < cantidad; n++) {
+      const materia = materiasDepartamento[n % Math.max(1, materiasDepartamento.length)];
       docentesPlan.push({
         celulaId: celulas[n % Math.max(1, celulas.length)],
         departamentoId,
-        etiqueta: etiquetasPorDepartamento[departamentoId] ?? 'Piloto',
+        materiaNombre: materia?.nombre ?? materiaFallbackPorDepartamento[departamentoId] ?? 'Materia piloto',
       });
     }
   }
@@ -263,7 +279,7 @@ async function populatePilotTeachers(db: D1Database, materias: Materia[], sedes:
   const docentes = docentesPlan.slice(0, PILOT_DOCENTE_COUNT);
   docentes.forEach((docente, idx) => {
     const id = `${DEV_DOC_PREFIX}-${String(idx + 1).padStart(2, '0')}`;
-    const nombre = `Docente Piloto ${APELLIDOS[idx % APELLIDOS.length]} ${docente.etiqueta} ${idx + 1}`;
+    const nombre = `Docente - ${docente.materiaNombre} - ${String(idx + 1).padStart(2, '0')}`;
     statements.push(
       db.prepare(`
         INSERT INTO docentes (id, nombre, email, tipo_vinculacion, celula_id, departamento_id, horas_asignadas, max_horas, modo_libre)
@@ -428,6 +444,9 @@ dev.delete('/piloto/asignaciones', async (c) => {
   const statements: D1PreparedStatement[] = [
     db.prepare(`DELETE FROM asignaciones WHERE id LIKE ? OR docente_id LIKE ?`).bind(`${DEV_ASIG_PREFIX}-%`, `${DEV_DOC_PREFIX}-%`),
   ];
+  if (existingTables.has('clases')) {
+    statements.push(db.prepare(`UPDATE clases SET estado = 'pendiente' WHERE programa_id = ?`).bind(PILOT_PROGRAMA_ID));
+  }
   if (existingTables.has('docentes')) {
     statements.push(...docenteIds.map(id => db.prepare('UPDATE docentes SET horas_asignadas = 0 WHERE id = ?').bind(id)));
   }

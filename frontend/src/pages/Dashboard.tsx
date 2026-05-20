@@ -53,7 +53,12 @@ export function Dashboard() {
   const totalHorasMax = docentes.reduce((acc: number, d: Docente) => acc + d.max_horas, 0);
   const porcentajeOcupacion = totalHorasMax > 0 ? Math.round((totalHorasAsignadas / totalHorasMax) * 100) : 0;
   const clasesActivas = clases.filter((clase: ClaseAcademica) => clase.estado !== 'cancelada');
-  const clasesAsignadas = clasesActivas.filter((clase: ClaseAcademica) => clase.estado === 'asignada');
+  const asignacionesKeys = new Set((asignaciones as any[]).map(a =>
+    `${a.periodo}|${a.sede_id}|${a.materia_id}|${a.grupo ?? 1}|${a.calendario}`
+  ));
+  const clasesAsignadas = clasesActivas.filter((clase: ClaseAcademica) =>
+    asignacionesKeys.has(`${clase.periodo}|${clase.sede_id}|${clase.materia_id}|${clase.grupo ?? 1}|${clase.calendario}`)
+  );
   const totalHorasDemanda = clasesActivas.reduce(
     (acc: number, clase: ClaseAcademica) => acc + horasBloque(clase.hora_inicio, clase.hora_fin),
     0

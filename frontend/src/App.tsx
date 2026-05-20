@@ -12,12 +12,18 @@ import { Periodos } from './pages/Periodos'
 import { Facultades } from './pages/Facultades'
 import { Clases } from './pages/Clases'
 import { HorarioSede } from './pages/HorarioSede'
+import { PlantillasClases } from './pages/PlantillasClases'
+import { DocumentacionStandalone } from './pages/Documentacion'
 import { PeriodoProvider } from './context/PeriodoContext'
 
-type Page = 'dashboard' | 'docentes' | 'sedes' | 'celulas' | 'programas' | 'periodos' | 'facultades' | 'materias' | 'clases' | 'horario-sede' | 'asignaciones' | 'mapa'
+type Page = 'dashboard' | 'docentes' | 'sedes' | 'celulas' | 'programas' | 'periodos' | 'facultades' | 'materias' | 'clases' | 'plantillas-clases' | 'horario-sede' | 'asignaciones' | 'mapa'
 
 function App() {
   const [page, setPage] = useState<Page>('dashboard')
+
+  if (window.location.pathname === '/docs') {
+    return <DocumentacionStandalone />
+  }
 
   const renderPage = () => {
     switch (page) {
@@ -30,6 +36,7 @@ function App() {
       case 'facultades': return <Facultades />
       case 'materias': return <Materias />
       case 'clases': return <Clases />
+      case 'plantillas-clases': return <PlantillasClases />
       case 'horario-sede': return <HorarioSede />
       case 'asignaciones': return <Asignaciones />
       case 'mapa': return <Mapa />

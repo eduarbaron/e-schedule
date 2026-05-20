@@ -56,6 +56,7 @@ export interface Programa {
   es_prioritario: number;
   orden_prioridad: number;
   tipo_ciclo: 'semanal' | 'quincenal';
+  numero_semestres: number;
   departamento_id: string | null;
   departamento_nombre?: string | null;
   facultad_nombre?: string | null;
@@ -102,6 +103,8 @@ export interface Asignacion {
   sede_nombre?: string;
   materia_id: string;
   materia_nombre?: string;
+  programa_id?: string | null;
+  programa_nombre?: string | null;
   semestre?: number | null;
   celula_nombre?: string;
   docente_celula_id?: string | null;
@@ -141,6 +144,16 @@ export interface ClaseAcademica {
   hora_inicio: string;
   hora_fin: string;
   estado: 'pendiente' | 'asignada' | 'cancelada';
+  created_at: string;
+}
+
+export interface ClaseTemplate {
+  id: string;
+  nombre: string;
+  programa_id: string | null;
+  dias_semana: ('L' | 'M' | 'X' | 'J' | 'V' | 'S')[];
+  jornadas: { hora_inicio: string; hora_fin: string }[];
+  semestres: { semestre: number; grupos: number }[];
   created_at: string;
 }
 

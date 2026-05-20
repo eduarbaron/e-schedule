@@ -19,6 +19,63 @@ function classKey(input: {
   return `${input.periodo}|${input.sede_id}|${input.materia_id}|${input.grupo}|${input.calendario}`;
 }
 
+async function eliminarAsignaciones(
+  db: D1Database,
+  asigs: Asignacion[]
+) {
+  if (asigs.length === 0) return { eliminadas: 0 };
+
+  const horasPorDocente = new Map<string, number>();
+  for (const a of asigs) {
+    const h = horasBloque(a.hora_inicio, a.hora_fin);
+    horasPorDocente.set(a.docente_id, (horasPorDocente.get(a.docente_id) ?? 0) + h);
+  }
+
+  const ids = asigs.map(a => a.id);
+  const placeholders = ids.map(() => '?').join(',');
+  const stmts: D1PreparedStatement[] = [
+    db.prepare(`DELETE FROM asignaciones WHERE id IN (${placeholders})`).bind(...ids),
+  ];
+
+  for (const [docente_id, horas] of horasPorDocente) {
+    stmts.push(
+      db.prepare('UPDATE docentes SET horas_asignadas = MAX(0, horas_asignadas - ?) WHERE id = ?')
+        .bind(horas, docente_id)
+    );
+  }
+
+  const clasesAfectadas = new Map<string, Asignacion>();
+  asigs.forEach(a => clasesAfectadas.set(classKey(a), a));
+  for (const clase of clasesAfectadas.values()) {
+    stmts.push(
+      db.prepare(`
+        UPDATE clases
+        SET estado = 'pendiente'
+        WHERE periodo = ?
+          AND sede_id = ?
+          AND materia_id = ?
+          AND grupo = ?
+          AND calendario = ?
+          AND NOT EXISTS (
+            SELECT 1
+            FROM asignaciones a
+            WHERE a.periodo = clases.periodo
+              AND a.sede_id = clases.sede_id
+              AND a.materia_id = clases.materia_id
+              AND a.grupo = clases.grupo
+              AND a.calendario = clases.calendario
+          )
+      `).bind(clase.periodo, clase.sede_id, clase.materia_id, clase.grupo, clase.calendario)
+    );
+  }
+
+  for (let i = 0; i < stmts.length; i += 50) {
+    await db.batch(stmts.slice(i, i + 50));
+  }
+
+  return { eliminadas: asigs.length };
+}
+
 async function resolverCalendarioAsignacion(
   db: D1Database,
   materiaId: string,
@@ -43,7 +100,7 @@ async function resolverCalendarioAsignacion(
 }
 
 asignaciones.get('/', async (c) => {
-  const { periodo, docente_id, sede_id } = c.req.query();
+  const { periodo, docente_id, sede_id, programa_id } = c.req.query();
   let query = `
     SELECT a.*,
       d.nombre as docente_nombre,
@@ -52,7 +109,9 @@ asignaciones.get('/', async (c) => {
       s.celula_id as sede_celula_id,
       s.latitud, s.longitud,
       m.nombre as materia_nombre,
+      m.programa_id,
       m.semestre,
+      p.nombre as programa_nombre,
       cs.nombre as celula_nombre,
       cs.nombre as sede_celula_nombre,
       cd.nombre as docente_celula_nombre
@@ -60,6 +119,7 @@ asignaciones.get('/', async (c) => {
     JOIN docentes d ON a.docente_id = d.id
     JOIN sedes s ON a.sede_id = s.id
     JOIN materias m ON a.materia_id = m.id
+    LEFT JOIN programas p ON m.programa_id = p.id
     LEFT JOIN celulas cs ON s.celula_id = cs.id
     LEFT JOIN celulas cd ON d.celula_id = cd.id
     WHERE 1=1
@@ -68,6 +128,7 @@ asignaciones.get('/', async (c) => {
   if (periodo) { query += ' AND a.periodo = ?'; params.push(periodo); }
   if (docente_id) { query += ' AND a.docente_id = ?'; params.push(docente_id); }
   if (sede_id) { query += ' AND a.sede_id = ?'; params.push(sede_id); }
+  if (programa_id) { query += ' AND m.programa_id = ?'; params.push(programa_id); }
   query += ' ORDER BY a.dia_semana, a.hora_inicio';
   const result = await c.env.e_schedule_db.prepare(query).bind(...params).all();
   return c.json(result.results);
@@ -1011,6 +1072,36 @@ asignaciones.delete('/revertir-programa', async (c) => {
   return c.json({ success: true, eliminadas: asigs.length });
 });
 
+asignaciones.delete('/bulk', async (c) => {
+  const { periodo, programa_id, docente_id, sede_id, celula_id, materia_id, semestre, calendario, modo } = c.req.query();
+  if (!periodo) {
+    return c.json({ error: 'periodo es requerido para borrar asignaciones' }, 400);
+  }
+
+  let query = `
+    SELECT a.*
+    FROM asignaciones a
+    JOIN materias m ON a.materia_id = m.id
+    JOIN sedes s ON a.sede_id = s.id
+    WHERE a.periodo = ?
+  `;
+  const params: string[] = [periodo];
+
+  if (programa_id) { query += ' AND m.programa_id = ?'; params.push(programa_id); }
+  if (docente_id) { query += ' AND a.docente_id = ?'; params.push(docente_id); }
+  if (sede_id) { query += ' AND a.sede_id = ?'; params.push(sede_id); }
+  if (celula_id) { query += ' AND s.celula_id = ?'; params.push(celula_id); }
+  if (materia_id) { query += ' AND a.materia_id = ?'; params.push(materia_id); }
+  if (semestre) { query += ' AND m.semestre = ?'; params.push(semestre); }
+  if (calendario) { query += ' AND a.calendario = ?'; params.push(calendario); }
+  if (modo) { query += ' AND a.modo = ?'; params.push(modo); }
+
+  const result = await c.env.e_schedule_db.prepare(query).bind(...params).all();
+  const asigs = result.results as unknown as Asignacion[];
+  const deleteResult = await eliminarAsignaciones(c.env.e_schedule_db, asigs);
+  return c.json({ success: true, ...deleteResult });
+});
+
 asignaciones.delete('/:id', async (c) => {
   const { id } = c.req.param();
   const asignacion = await c.env.e_schedule_db
@@ -1026,6 +1117,26 @@ asignaciones.delete('/:id', async (c) => {
     c.env.e_schedule_db
       .prepare('UPDATE docentes SET horas_asignadas = MAX(0, horas_asignadas - ?) WHERE id = ?')
       .bind(horas, asignacion.docente_id),
+    c.env.e_schedule_db
+      .prepare(`
+        UPDATE clases
+        SET estado = 'pendiente'
+        WHERE periodo = ?
+          AND sede_id = ?
+          AND materia_id = ?
+          AND grupo = ?
+          AND calendario = ?
+          AND NOT EXISTS (
+            SELECT 1
+            FROM asignaciones a
+            WHERE a.periodo = clases.periodo
+              AND a.sede_id = clases.sede_id
+              AND a.materia_id = clases.materia_id
+              AND a.grupo = clases.grupo
+              AND a.calendario = clases.calendario
+              AND a.id != ?
+          )
+      `).bind(asignacion.periodo, asignacion.sede_id, asignacion.materia_id, asignacion.grupo, asignacion.calendario, id),
   ]);
   return c.json({ success: true });
 });

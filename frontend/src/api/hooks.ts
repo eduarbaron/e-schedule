@@ -144,11 +144,65 @@ export const useClases = (params?: Record<string, string>) =>
     queryFn: () => api.get('/clases', { params }).then(r => r.data),
   });
 
+export const useClaseTemplates = (programaId?: string) =>
+  useQuery({
+    queryKey: ['clases', 'templates', programaId],
+    queryFn: () => api.get('/clases/templates', { params: programaId ? { programa_id: programaId } : {} }).then(r => r.data),
+  });
+
+export const useCreateClaseTemplate = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => api.post('/clases/templates', data).then(r => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['clases', 'templates'] }),
+  });
+};
+
+export const useUpdateClaseTemplate = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: any) => api.put(`/clases/templates/${id}`, data).then(r => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['clases', 'templates'] }),
+  });
+};
+
+export const useDeleteClaseTemplate = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/clases/templates/${id}`).then(r => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['clases', 'templates'] }),
+  });
+};
+
 export const useCreateClase = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: any) => api.post('/clases', data).then(r => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['clases'] }),
+  });
+};
+
+export const useGenerateClases = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => api.post('/clases/generar', data).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['clases'] });
+      qc.invalidateQueries({ queryKey: ['asignaciones'] });
+      qc.invalidateQueries({ queryKey: ['docentes'] });
+    },
+  });
+};
+
+export const useBulkDeleteClases = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: Record<string, string>) => api.delete('/clases/bulk', { params }).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['clases'] });
+      qc.invalidateQueries({ queryKey: ['asignaciones'] });
+      qc.invalidateQueries({ queryKey: ['docentes'] });
+    },
   });
 };
 
@@ -373,6 +427,18 @@ export const useDeleteAsignacion = () => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['asignaciones'] });
       qc.invalidateQueries({ queryKey: ['docentes'] });
+    },
+  });
+};
+
+export const useBulkDeleteAsignaciones = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: Record<string, string>) => api.delete('/asignaciones/bulk', { params }).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['asignaciones'] });
+      qc.invalidateQueries({ queryKey: ['docentes'] });
+      qc.invalidateQueries({ queryKey: ['clases'] });
     },
   });
 };

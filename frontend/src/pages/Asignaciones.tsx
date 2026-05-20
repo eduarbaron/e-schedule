@@ -8,9 +8,9 @@ import { notifications } from '@mantine/notifications';
 import { FileText, Plus, Trash2, Zap, AlertTriangle, CheckCircle } from 'lucide-react';
 import {
   useAsignaciones, useCelulas, useDocentes, useSedes, useMaterias,
-  useCreateAsignacion, useDeleteAsignacion, useAutoAsignacion, useProgramas,
-  useDevPilotStatus, useDevPopulatePilot, useDevClearPilotData, useDevClearPilotAssignments,
-  useDevPopulatePilotTeachers, useDevPopulatePilotClasses, useDevClearPilotTeachers, useDevClearPilotClasses
+  useCreateAsignacion, useDeleteAsignacion, useBulkDeleteAsignaciones, useAutoAsignacion, useProgramas,
+  useDevPilotStatus, useDevClearPilotAssignments,
+  useDevPopulatePilotTeachers, useDevClearPilotTeachers
 } from '../api/hooks';
 import { AsignacionMasiva } from '../components/AsignacionMasiva';
 import { useConfirm } from '../components/ConfirmProvider';
@@ -55,15 +55,12 @@ export function Asignaciones() {
   const { data: programas = [] } = useProgramas();
   const createAsignacion = useCreateAsignacion();
   const deleteAsignacion = useDeleteAsignacion();
+  const bulkDeleteAsignaciones = useBulkDeleteAsignaciones();
   const autoAsignacion = useAutoAsignacion();
   const { data: devStatus } = useDevPilotStatus();
-  const devPopulate = useDevPopulatePilot();
-  const devClearData = useDevClearPilotData();
   const devClearAssignments = useDevClearPilotAssignments();
   const devPopulateTeachers = useDevPopulatePilotTeachers();
-  const devPopulateClasses = useDevPopulatePilotClasses();
   const devClearTeachers = useDevClearPilotTeachers();
-  const devClearClasses = useDevClearPilotClasses();
 
   const [manualOpened, { open: openManual, close: closeManual }] = useDisclosure(false);
   const [autoOpened, { open: openAuto, close: closeAuto }] = useDisclosure(false);
@@ -236,48 +233,12 @@ export function Asignaciones() {
     };
   }, [asignaciones, celulas, filtros.celulaId, sedesById]);
 
-  const handleDevPopulate = async () => {
-    try {
-      const res = await devPopulate.mutateAsync();
-      notifications.show({
-        message: `Piloto poblado: ${res.docentes_creados} docentes y ${res.clases_creadas} clases`,
-        color: 'green',
-      });
-    } catch (e: any) {
-      notifications.show({ message: e.response?.data?.error || 'Error al poblar piloto', color: 'red' });
-    }
-  };
-
   const handleDevPopulateTeachers = async () => {
     try {
       const res = await devPopulateTeachers.mutateAsync();
       notifications.show({ message: `${res.docentes_creados} docentes piloto poblados`, color: 'green' });
     } catch (e: any) {
       notifications.show({ message: e.response?.data?.error || 'Error al poblar docentes piloto', color: 'red' });
-    }
-  };
-
-  const handleDevPopulateClasses = async () => {
-    try {
-      const res = await devPopulateClasses.mutateAsync();
-      notifications.show({ message: `${res.clases_creadas} clases piloto pobladas`, color: 'green' });
-    } catch (e: any) {
-      notifications.show({ message: e.response?.data?.error || 'Error al poblar clases piloto', color: 'red' });
-    }
-  };
-
-  const handleDevClearData = async () => {
-    if (!(await confirm({
-      title: 'Borrar datos piloto',
-      message: 'Se eliminarán docentes y asignaciones piloto, y las clases pobladas del programa técnico web.',
-      confirmLabel: 'Borrar piloto',
-      color: 'orange',
-    }))) return;
-    try {
-      await devClearData.mutateAsync();
-      notifications.show({ message: 'Datos piloto eliminados', color: 'orange' });
-    } catch (e: any) {
-      notifications.show({ message: e.response?.data?.error || 'Error al borrar datos piloto', color: 'red' });
     }
   };
 
@@ -296,21 +257,6 @@ export function Asignaciones() {
     }
   };
 
-  const handleDevClearClasses = async () => {
-    if (!(await confirm({
-      title: 'Borrar clases piloto',
-      message: 'Se eliminarán las clases del programa técnico web y sus asignaciones asociadas.',
-      confirmLabel: 'Borrar clases',
-      color: 'orange',
-    }))) return;
-    try {
-      await devClearClasses.mutateAsync();
-      notifications.show({ message: 'Clases piloto eliminadas', color: 'orange' });
-    } catch (e: any) {
-      notifications.show({ message: e.response?.data?.error || 'Error al borrar clases piloto', color: 'red' });
-    }
-  };
-
   const handleDevClearAssignments = async () => {
     if (!(await confirm({
       title: 'Borrar asignaciones piloto',
@@ -323,6 +269,38 @@ export function Asignaciones() {
       notifications.show({ message: `${res.eliminadas ?? 0} asignaciones piloto eliminadas`, color: 'orange' });
     } catch (e: any) {
       notifications.show({ message: e.response?.data?.error || 'Error al borrar asignaciones piloto', color: 'red' });
+    }
+  };
+
+  const handleBulkDeleteAssignments = async () => {
+    if (!periodoFinal) {
+      notifications.show({ message: 'Selecciona un periodo de trabajo', color: 'red' });
+      return;
+    }
+    if (asignacionesFiltradas.length === 0) {
+      notifications.show({ message: 'No hay asignaciones para borrar con los filtros actuales', color: 'orange' });
+      return;
+    }
+    if (!(await confirm({
+      title: 'Borrar asignaciones filtradas',
+      message: `Se eliminarán ${asignacionesFiltradas.length} asignación(es) del periodo actual según los filtros aplicados. Las clases se conservan.`,
+      confirmLabel: 'Borrar asignaciones',
+      color: 'red',
+    }))) return;
+
+    try {
+      const params: Record<string, string> = { periodo: periodoFinal };
+      if (filtros.docenteId) params.docente_id = filtros.docenteId;
+      if (filtros.sedeId) params.sede_id = filtros.sedeId;
+      if (filtros.celulaId) params.celula_id = filtros.celulaId;
+      if (filtros.materiaId) params.materia_id = filtros.materiaId;
+      if (filtros.semestre) params.semestre = filtros.semestre;
+      if (filtros.semana) params.calendario = filtros.semana;
+      if (filtros.modo) params.modo = filtros.modo;
+      const res = await bulkDeleteAsignaciones.mutateAsync(params);
+      notifications.show({ message: `${res.eliminadas ?? 0} asignación(es) eliminadas`, color: 'orange' });
+    } catch (e: any) {
+      notifications.show({ message: e.response?.data?.error || 'Error al borrar asignaciones', color: 'red' });
     }
   };
 
@@ -376,6 +354,15 @@ export function Asignaciones() {
           <Button leftSection={<FileText size={16} />} variant="light" color="gray" onClick={handleExportPdf}>
             PDF
           </Button>
+          <Button
+            leftSection={<Trash2 size={16} />}
+            variant="light"
+            color="red"
+            onClick={handleBulkDeleteAssignments}
+            loading={bulkDeleteAsignaciones.isPending}
+          >
+            Borrar filtradas
+          </Button>
         </Group>
       </Group>
 
@@ -396,7 +383,7 @@ export function Asignaciones() {
           <Stack gap={2}>
             <Text fw={700} size="sm">Herramientas de desarrollo · Piloto técnico web</Text>
             <Text size="xs" c="dimmed">
-              Pobla docentes de prueba y clases del programa técnico web para probar el algoritmo.
+              Pobla docentes de prueba y limpia asignaciones piloto para probar el algoritmo. Las clases se generan desde la pantalla Clases.
             </Text>
           </Stack>
           <Group gap="xs">
@@ -414,26 +401,14 @@ export function Asignaciones() {
           </Alert>
         )}
         <Group mt="sm" gap="xs">
-          <Button size="xs" color="brand" onClick={handleDevPopulate} loading={devPopulate.isPending}>
-            Poblar todo
-          </Button>
           <Button size="xs" variant="light" color="brand" onClick={handleDevPopulateTeachers} loading={devPopulateTeachers.isPending}>
             Poblar docentes
-          </Button>
-          <Button size="xs" variant="light" color="success" onClick={handleDevPopulateClasses} loading={devPopulateClasses.isPending}>
-            Poblar clases
           </Button>
           <Button size="xs" variant="light" color="orange" onClick={handleDevClearAssignments} loading={devClearAssignments.isPending}>
             Borrar asignaciones piloto
           </Button>
           <Button size="xs" variant="light" color="red" onClick={handleDevClearTeachers} loading={devClearTeachers.isPending}>
             Borrar docentes
-          </Button>
-          <Button size="xs" variant="light" color="red" onClick={handleDevClearClasses} loading={devClearClasses.isPending}>
-            Borrar clases
-          </Button>
-          <Button size="xs" variant="light" color="red" onClick={handleDevClearData} loading={devClearData.isPending}>
-            Borrar todo
           </Button>
         </Group>
       </Paper>

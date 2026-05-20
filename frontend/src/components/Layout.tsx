@@ -1,7 +1,7 @@
 import { AppShell, Burger, Group, NavLink, Text, ScrollArea, Box, Divider, Select } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
-  LayoutDashboard, MapPin, Users, CalendarDays, Map, GraduationCap, Calendar, Library, ClipboardList, CalendarRange
+  LayoutDashboard, MapPin, Users, CalendarDays, Map, GraduationCap, Calendar, Library, ClipboardList, CalendarRange, PanelsTopLeft, BookOpen
 } from 'lucide-react';
 import { usePeriodoTrabajo } from '../context/PeriodoContext';
 
@@ -31,8 +31,10 @@ const navGroups = [
     items: [
       { id: 'facultades', label: 'Facultades', icon: Library },
       { id: 'programas', label: 'Programas', icon: GraduationCap },
+      { id: 'materias', label: 'Materias', icon: BookOpen },
       { id: 'periodos', label: 'Períodos', icon: Calendar },
       { id: 'clases', label: 'Clases', icon: ClipboardList },
+      { id: 'plantillas-clases', label: 'Plantillas de clases', icon: PanelsTopLeft },
       { id: 'horario-sede', label: 'Horario por sede', icon: CalendarRange },
     ],
   },
@@ -40,6 +42,12 @@ const navGroups = [
     label: 'Operación',
     items: [
       { id: 'asignaciones', label: 'Asignaciones', icon: CalendarDays },
+    ],
+  },
+  {
+    label: 'Ayuda',
+    items: [
+      { id: 'documentacion', label: 'Documentación', icon: BookOpen },
     ],
   },
 ];
@@ -145,7 +153,13 @@ export function Layout({ children, activePage, onNavigate }: LayoutProps) {
                         </Box>
                       }
                       active={isActive}
-                      onClick={() => onNavigate(item.id)}
+                      onClick={() => {
+                        if (item.id === 'documentacion') {
+                          window.location.href = '/docs';
+                          return;
+                        }
+                        onNavigate(item.id);
+                      }}
                       style={{
                         borderRadius: 10,
                         marginBottom: 2,

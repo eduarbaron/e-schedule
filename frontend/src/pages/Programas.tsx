@@ -415,6 +415,7 @@ export function Programas() {
     es_prioritario: false,
     orden_prioridad: 99,
     tipo_ciclo: 'quincenal' as 'semanal' | 'quincenal',
+    numero_semestres: 10,
     sede_ids: [] as string[],
   });
   const [editForm, setEditForm] = useState({
@@ -423,6 +424,7 @@ export function Programas() {
     es_prioritario: false,
     orden_prioridad: 99,
     tipo_ciclo: 'quincenal' as 'semanal' | 'quincenal',
+    numero_semestres: 10,
     sede_ids: [] as string[],
   });
   const { data: editSedesPrograma = [] } = useProgramaSedes(editingPrograma?.id ?? '');
@@ -444,7 +446,7 @@ export function Programas() {
       await createPrograma.mutateAsync(form);
       notifications.show({ message: 'Programa creado exitosamente', color: 'green' });
       close();
-      setForm({ nombre: '', descripcion: '', es_prioritario: false, orden_prioridad: 99, tipo_ciclo: 'quincenal', sede_ids: [] });
+      setForm({ nombre: '', descripcion: '', es_prioritario: false, orden_prioridad: 99, tipo_ciclo: 'quincenal', numero_semestres: 10, sede_ids: [] });
     } catch (e: any) {
       notifications.show({ message: e.response?.data?.error || 'Error al crear programa', color: 'red' });
     }
@@ -458,6 +460,7 @@ export function Programas() {
       es_prioritario: p.es_prioritario === 1,
       orden_prioridad: p.orden_prioridad,
       tipo_ciclo: p.tipo_ciclo,
+      numero_semestres: p.numero_semestres ?? 10,
       sede_ids: [],
     });
     openEdit();
@@ -553,6 +556,9 @@ export function Programas() {
                           <Text fw={600}>{p.nombre}</Text>
                           <Badge size="xs" variant="light" color={p.tipo_ciclo === 'semanal' ? 'teal' : 'violet'}>
                             {p.tipo_ciclo === 'semanal' ? 'Semanal' : 'Quincenal'}
+                          </Badge>
+                          <Badge size="xs" variant="light" color="cyan">
+                            {p.numero_semestres ?? 10} semestres
                           </Badge>
                           <Badge size="xs" variant="light" color="gray">#{p.orden_prioridad}</Badge>
                         </Group>
@@ -655,6 +661,13 @@ export function Programas() {
               value={form.tipo_ciclo}
               onChange={v => setForm(f => ({ ...f, tipo_ciclo: (v || 'quincenal') as 'semanal' | 'quincenal' }))}
             />
+            <NumberInput
+              label="Numero de semestres"
+              min={1}
+              max={10}
+              value={form.numero_semestres}
+              onChange={v => setForm(f => ({ ...f, numero_semestres: Number(v) || 1 }))}
+            />
           </Group>
           <MultiSelect
             label="Sedes donde se oferta"
@@ -712,6 +725,13 @@ export function Programas() {
               ]}
               value={editForm.tipo_ciclo}
               onChange={v => setEditForm(f => ({ ...f, tipo_ciclo: (v || 'quincenal') as 'semanal' | 'quincenal' }))}
+            />
+            <NumberInput
+              label="Numero de semestres"
+              min={1}
+              max={10}
+              value={editForm.numero_semestres}
+              onChange={v => setEditForm(f => ({ ...f, numero_semestres: Number(v) || 1 }))}
             />
           </Group>
           <MultiSelect
