@@ -130,3 +130,33 @@ export interface ClaseAcademica {
 export type Bindings = {
   e_schedule_db: D1Database;
 };
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
+
+export interface UsuarioPublico {
+  id: string;
+  nombre: string;
+  email: string;
+  rol: 'admin' | 'coordinador';
+}
+
+export interface UsuarioRow {
+  id: string;
+  nombre: string;
+  email: string;
+  rol: 'admin' | 'coordinador';
+  password_hash: string;
+  password_salt: string;
+  password_iterations: number;
+  activo: number;
+  ultimo_login_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type Variables = {
+  user: UsuarioPublico;
+};
+
+/** Tipo de entorno completo para rutas protegidas */
+export type AppEnv = { Bindings: Bindings; Variables: Variables };

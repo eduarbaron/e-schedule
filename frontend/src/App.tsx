@@ -1,4 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useAuth } from './context/AuthContext'
+import { LoginPage } from './pages/Login'
 import { Layout } from './components/Layout'
 import { Dashboard } from './pages/Dashboard'
 import { Docentes } from './pages/Docentes'
@@ -14,16 +16,27 @@ import { Clases } from './pages/Clases'
 import { HorarioSede } from './pages/HorarioSede'
 import { PlantillasClases } from './pages/PlantillasClases'
 import { DocumentacionStandalone } from './pages/Documentacion'
+import { Usuarios } from './pages/Usuarios'
 import { PeriodoProvider } from './context/PeriodoContext'
 
-type Page = 'dashboard' | 'docentes' | 'sedes' | 'celulas' | 'programas' | 'periodos' | 'facultades' | 'materias' | 'clases' | 'plantillas-clases' | 'horario-sede' | 'asignaciones' | 'mapa'
+type Page = 'dashboard' | 'docentes' | 'sedes' | 'celulas' | 'programas' | 'periodos' | 'facultades' | 'materias' | 'clases' | 'plantillas-clases' | 'horario-sede' | 'asignaciones' | 'mapa' | 'usuarios'
 
 function App() {
+  const { user, isLoading, isAdmin } = useAuth();
   const [page, setPage] = useState<Page>('dashboard')
+
+  // Resetear a dashboard cada vez que cambia el usuario (login/logout/cambio de cuenta)
+  // Esto evita que un usuario hereda la página activa de una sesión anterior
+  useEffect(() => {
+    setPage('dashboard')
+  }, [user?.id])
 
   if (window.location.pathname === '/docs') {
     return <DocumentacionStandalone />
   }
+
+  if (isLoading) return null;
+  if (!user) return <LoginPage />;
 
   const renderPage = () => {
     switch (page) {
@@ -40,6 +53,7 @@ function App() {
       case 'horario-sede': return <HorarioSede />
       case 'asignaciones': return <Asignaciones />
       case 'mapa': return <Mapa />
+      case 'usuarios': return isAdmin ? <Usuarios /> : <Dashboard />
       default: return <Dashboard />
     }
   }

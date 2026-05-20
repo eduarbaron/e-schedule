@@ -1,9 +1,10 @@
-import { AppShell, Burger, Group, NavLink, Text, ScrollArea, Box, Divider, Select } from '@mantine/core';
+import { AppShell, Burger, Group, NavLink, Text, ScrollArea, Box, Divider, Select, Tooltip, ActionIcon, Avatar } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
-  LayoutDashboard, MapPin, Users, CalendarDays, Map, GraduationCap, Calendar, Library, ClipboardList, CalendarRange, PanelsTopLeft, BookOpen
+  LayoutDashboard, MapPin, Users, CalendarDays, Map, GraduationCap, Calendar, Library, ClipboardList, CalendarRange, PanelsTopLeft, BookOpen, LogOut, ShieldCheck
 } from 'lucide-react';
 import { usePeriodoTrabajo } from '../context/PeriodoContext';
+import { useAuth } from '../context/AuthContext';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -55,6 +56,7 @@ const navGroups = [
 export function Layout({ children, activePage, onNavigate }: LayoutProps) {
   const [opened, { toggle }] = useDisclosure();
   const { periodoId, periodos, isLoading, setPeriodoId } = usePeriodoTrabajo();
+  const { user, isAdmin, logout } = useAuth();
 
   return (
     <AppShell
@@ -89,28 +91,51 @@ export function Layout({ children, activePage, onNavigate }: LayoutProps) {
               </div>
             </Group>
           </Group>
-          <Select
-            size="xs"
-            label="Periodo de trabajo"
-            data={periodos.map(p => ({
-              value: p.id,
-              label: `${p.nombre}${p.activo ? ' (activo)' : ''}`,
-            }))}
-            value={periodoId || null}
-            onChange={value => setPeriodoId(value || '')}
-            placeholder="Periodo activo"
-            loading={isLoading}
-            searchable
-            w={260}
-            styles={{
-              label: { color: 'rgba(255,255,255,0.7)', fontSize: 10, fontWeight: 700 },
-              input: {
-                background: 'rgba(255,255,255,0.1)',
-                borderColor: 'rgba(255,255,255,0.22)',
-                color: 'white',
-              },
-            }}
-          />
+          <Group gap="md">
+            <Select
+              size="xs"
+              label="Periodo de trabajo"
+              data={periodos.map(p => ({
+                value: p.id,
+                label: `${p.nombre}${p.activo ? ' (activo)' : ''}`,
+              }))}
+              value={periodoId || null}
+              onChange={value => setPeriodoId(value || '')}
+              placeholder="Periodo activo"
+              loading={isLoading}
+              searchable
+              w={220}
+              styles={{
+                label: { color: 'rgba(255,255,255,0.7)', fontSize: 10, fontWeight: 700 },
+                input: {
+                  background: 'rgba(255,255,255,0.1)',
+                  borderColor: 'rgba(255,255,255,0.22)',
+                  color: 'white',
+                },
+              }}
+            />
+            {/* Usuario activo + logout */}
+            <Group gap={8}>
+              <Avatar size="sm" radius="xl" color="blue" style={{ background: 'rgba(255,255,255,0.15)' }}>
+                {user?.nombre?.charAt(0).toUpperCase() ?? '?'}
+              </Avatar>
+              <Box visibleFrom="md">
+                <Text size="xs" c="white" fw={600} lh={1.2}>{user?.nombre}</Text>
+                <Text size="10px" style={{ color: 'rgba(255,255,255,0.5)' }}>{user?.rol}</Text>
+              </Box>
+              <Tooltip label="Cerrar sesión" position="bottom">
+                <ActionIcon
+                  variant="subtle"
+                  color="gray"
+                  size="sm"
+                  onClick={logout}
+                  style={{ color: 'rgba(255,255,255,0.7)' }}
+                >
+                  <LogOut size={15} />
+                </ActionIcon>
+              </Tooltip>
+            </Group>
+          </Group>
         </Group>
       </AppShell.Header>
 
@@ -120,20 +145,24 @@ export function Layout({ children, activePage, onNavigate }: LayoutProps) {
         borderRight: 'none',
         boxShadow: '2px 0 12px rgba(0,0,0,0.15)',
       }}>
-        <ScrollArea h="100%" p="xs">
+        <ScrollArea
+          h="100%"
+          p="xs"
+          type="hover"
+          scrollbarSize={4}
+          offsetScrollbars
+          styles={{
+            scrollbar: { background: 'transparent' },
+            thumb: { background: 'rgba(255,255,255,0.2)', '&:hover': { background: 'rgba(255,255,255,0.35)' } },
+          }}
+        >
           <Box pt="xs" pb="xl">
             {navGroups.map((group, gi) => (
               <Box key={group.label} mb="xs">
                 {gi > 0 && (
-                  <Divider
-                    my="xs"
-                    style={{ borderColor: 'rgba(255,255,255,0.08)' }}
-                  />
+                  <Divider my="xs" style={{ borderColor: 'rgba(255,255,255,0.08)' }} />
                 )}
-                <Text
-                  size="10px" fw={700} px="sm" pb={4}
-                  style={{ color: 'rgba(255,255,255,0.35)' }}
-                >
+                <Text size="10px" fw={700} px="sm" pb={4} style={{ color: 'rgba(255,255,255,0.35)' }}>
                   {group.label}
                 </Text>
                 {group.items.map((item) => {
@@ -154,23 +183,14 @@ export function Layout({ children, activePage, onNavigate }: LayoutProps) {
                       }
                       active={isActive}
                       onClick={() => {
-                        if (item.id === 'documentacion') {
-                          window.location.href = '/docs';
-                          return;
-                        }
+                        if (item.id === 'documentacion') { window.location.href = '/docs'; return; }
                         onNavigate(item.id);
                       }}
                       style={{
-                        borderRadius: 10,
-                        marginBottom: 2,
-                        paddingTop: 8,
-                        paddingBottom: 8,
+                        borderRadius: 10, marginBottom: 2, paddingTop: 8, paddingBottom: 8,
                         color: isActive ? '#ffffff' : 'rgba(255,255,255,0.72)',
-                        background: isActive
-                          ? 'linear-gradient(90deg, #528BC9, #3f73aa)'
-                          : 'transparent',
-                        fontWeight: isActive ? 600 : 400,
-                        fontSize: 13.5,
+                        background: isActive ? 'linear-gradient(90deg, #528BC9, #3f73aa)' : 'transparent',
+                        fontWeight: isActive ? 600 : 400, fontSize: 13.5,
                         boxShadow: isActive ? '0 2px 8px rgba(82,139,201,0.35)' : 'none',
                         transition: 'all 0.15s ease',
                         borderLeft: isActive ? '3px solid #87BF58' : '3px solid transparent',
@@ -180,6 +200,45 @@ export function Layout({ children, activePage, onNavigate }: LayoutProps) {
                 })}
               </Box>
             ))}
+
+            {/* Grupo Administración — solo admin */}
+            {isAdmin && (
+              <Box mb="xs">
+                <Divider my="xs" style={{ borderColor: 'rgba(255,255,255,0.08)' }} />
+                <Text size="10px" fw={700} px="sm" pb={4} style={{ color: 'rgba(255,255,255,0.35)' }}>
+                  Administración
+                </Text>
+                {[{ id: 'usuarios', label: 'Usuarios', icon: ShieldCheck }].map((item) => {
+                  const isActive = activePage === item.id;
+                  return (
+                    <NavLink
+                      key={item.id}
+                      label={item.label}
+                      leftSection={
+                        <Box style={{
+                          width: 28, height: 28, borderRadius: 7,
+                          background: isActive ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.06)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>
+                          <item.icon size={15} color={isActive ? '#ffffff' : 'rgba(255,255,255,0.65)'} />
+                        </Box>
+                      }
+                      active={isActive}
+                      onClick={() => onNavigate(item.id)}
+                      style={{
+                        borderRadius: 10, marginBottom: 2, paddingTop: 8, paddingBottom: 8,
+                        color: isActive ? '#ffffff' : 'rgba(255,255,255,0.72)',
+                        background: isActive ? 'linear-gradient(90deg, #528BC9, #3f73aa)' : 'transparent',
+                        fontWeight: isActive ? 600 : 400, fontSize: 13.5,
+                        boxShadow: isActive ? '0 2px 8px rgba(82,139,201,0.35)' : 'none',
+                        transition: 'all 0.15s ease',
+                        borderLeft: isActive ? '3px solid #87BF58' : '3px solid transparent',
+                      }}
+                    />
+                  );
+                })}
+              </Box>
+            )}
           </Box>
         </ScrollArea>
 

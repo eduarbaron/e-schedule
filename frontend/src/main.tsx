@@ -9,6 +9,7 @@ import '@mantine/dates/styles.css'
 import './index.css'
 import App from './App.tsx'
 import { ConfirmProvider } from './components/ConfirmProvider'
+import { AuthProvider } from './context/AuthContext'
 
 const theme = createTheme({
   primaryColor: 'brand',
@@ -44,10 +45,12 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <MantineProvider theme={theme}>
-        <ConfirmProvider>
-          <Notifications position="top-right" />
-          <App />
-        </ConfirmProvider>
+        <AuthProvider>
+          <ConfirmProvider>
+            <Notifications position="top-right" />
+            <App />
+          </ConfirmProvider>
+        </AuthProvider>
       </MantineProvider>
     </QueryClientProvider>
   </StrictMode>,
