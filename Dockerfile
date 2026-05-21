@@ -5,8 +5,10 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Instalar dependencias primero para aprovechar la caché de capas.
-COPY frontend/package*.json ./
-RUN npm ci
+# Se usa npm install (no npm ci) porque el lockfile vive en la raíz del monorepo,
+# no dentro de frontend/.
+COPY frontend/package.json ./
+RUN npm install
 
 # Copiar el código fuente.
 COPY frontend/ ./
