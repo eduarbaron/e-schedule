@@ -45,7 +45,7 @@ usuarios.post('/', async (c) => {
   await c.env.e_schedule_db
     .prepare(
       `INSERT INTO usuarios (id, nombre, email, rol, password_hash, password_salt, password_iterations)
-       VALUES (?, ?, ?, 'coordinador', ?, ?, 210000)`
+       VALUES (?, ?, ?, 'coordinador', ?, ?, 100000)`
     )
     .bind(id, nombre, email, hash, salt)
     .run();
@@ -102,7 +102,7 @@ usuarios.patch('/:id/password', async (c) => {
   await c.env.e_schedule_db
     .prepare(
       `UPDATE usuarios
-       SET password_hash = ?, password_salt = ?, password_iterations = 210000,
+       SET password_hash = ?, password_salt = ?, password_iterations = 100000,
            updated_at = datetime('now')
        WHERE id = ?`
     )

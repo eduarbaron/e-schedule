@@ -49,7 +49,7 @@ auth.post('/bootstrap-admin', async (c) => {
   await c.env.e_schedule_db
     .prepare(
       `INSERT INTO usuarios (id, nombre, email, rol, password_hash, password_salt, password_iterations)
-       VALUES (?, ?, ?, 'admin', ?, ?, 210000)`
+       VALUES (?, ?, ?, 'admin', ?, ?, 100000)`
     )
     .bind(id, nombre, email, hash, salt)
     .run();

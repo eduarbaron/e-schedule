@@ -29,7 +29,7 @@ export async function generateSalt(): Promise<string> {
 export async function hashPassword(
   password: string,
   salt: string,
-  iterations: number = 210000
+  iterations: number = 100000
 ): Promise<string> {
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
