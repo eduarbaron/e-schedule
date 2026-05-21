@@ -187,7 +187,7 @@ export function Facultades() {
       )}
 
       {/* Modal nueva facultad */}
-      <Modal opened={facOpened} onClose={closeFac} title="Nueva facultad">
+      <Modal opened={facOpened} onClose={closeFac} title="Nueva facultad" size="md">
         <Stack gap="sm">
           <TextInput
             label="Nombre de la facultad"
@@ -210,7 +210,7 @@ export function Facultades() {
       </Modal>
 
       {/* Modal nuevo departamento */}
-      <Modal opened={depOpened} onClose={closeDep} title="Nuevo departamento">
+      <Modal opened={depOpened} onClose={closeDep} title="Nuevo departamento" size="md">
         <Stack gap="sm">
           <TextInput
             label="Nombre del departamento"

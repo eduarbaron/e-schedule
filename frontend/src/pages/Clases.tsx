@@ -50,6 +50,7 @@ import { exportHorarioProgramaExcel } from '../utils/horarioExcelExport';
 const DIAS = ['L', 'M', 'X', 'J', 'V', 'S'];
 const HORAS = Array.from({ length: 17 }, (_, i) => `${String(i + 6).padStart(2, '0')}:00`);
 const DIA_OPTIONS = DIAS.map(d => ({ value: d, label: d }));
+const iconButtonColumn = { flex: '0 0 36px' };
 const SEMANA_OPTIONS = [
   { value: 'A', label: 'Semana A' },
   { value: 'B', label: 'Semana B' },
@@ -1023,7 +1024,7 @@ export function Clases() {
                 </Button>
               </Group>
               {templateForm.jornadas.map((jornada, index) => (
-                <Group key={index} grow align="flex-end">
+                <Group key={index} grow align="flex-end" wrap="nowrap">
                   <Select
                     label={`Inicio ${index + 1}`}
                     data={HORAS}
@@ -1037,6 +1038,7 @@ export function Clases() {
                     onChange={v => setTemplateJornada(index, { hora_fin: v || '09:00' })}
                   />
                   <ActionIcon
+                    style={iconButtonColumn}
                     variant="light"
                     color="red"
                     onClick={() => setTemplateForm(f => ({ ...f, jornadas: f.jornadas.filter((_, idx) => idx !== index) }))}
@@ -1062,7 +1064,7 @@ export function Clases() {
                 </Button>
               </Group>
               {templateForm.semestres.map((semestre, index) => (
-                <Group key={index} grow align="flex-end">
+                <Group key={index} grow align="flex-end" wrap="nowrap">
                   <Select
                     label="Semestre del programa"
                     data={semestreOptionsTemplate}
@@ -1078,6 +1080,7 @@ export function Clases() {
                     onChange={v => setTemplateSemestre(index, { grupos: Number(v) || 1 })}
                   />
                   <ActionIcon
+                    style={iconButtonColumn}
                     variant="light"
                     color="red"
                     onClick={() => setTemplateForm(f => ({ ...f, semestres: f.semestres.filter((_, idx) => idx !== index) }))}

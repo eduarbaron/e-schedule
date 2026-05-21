@@ -108,7 +108,7 @@ function SedesTable({
                     </ActionIcon>
                   </Tooltip>
                   <Tooltip label="Editar sede">
-                    <ActionIcon size="sm" variant="light" color="blue" onClick={() => onEdit(s)}>
+                    <ActionIcon size="sm" variant="light" color="brand" onClick={() => onEdit(s)}>
                       <Pencil size={13} />
                     </ActionIcon>
                   </Tooltip>
@@ -297,7 +297,7 @@ export function Celulas() {
               <Accordion.Control>
                 <Group justify="space-between" pr="md">
                   <Group gap="sm">
-                    <ThemeIcon color="blue" variant="light" size="md">
+                    <ThemeIcon color="brand" variant="light" size="md">
                       <Building2 size={15} />
                     </ThemeIcon>
                     <div>
@@ -305,7 +305,7 @@ export function Celulas() {
                       <Text size="xs" c="dimmed">Sin célula regional asignada</Text>
                     </div>
                   </Group>
-                  <Badge size="sm" variant="light" color="blue">{sedesSinCelula.length} sede{sedesSinCelula.length !== 1 ? 's' : ''}</Badge>
+                  <Badge size="sm" variant="light" color="brand">{sedesSinCelula.length} sede{sedesSinCelula.length !== 1 ? 's' : ''}</Badge>
                 </Group>
               </Accordion.Control>
               <Accordion.Panel>
@@ -492,7 +492,7 @@ export function Celulas() {
             onChange={e => setEditForm(f => ({ ...f, direccion: e.target.value }))} />
           <Group justify="flex-end" mt="sm">
             <Button variant="light" onClick={closeEdit}>Cancelar</Button>
-            <Button onClick={handleUpdateSede} loading={updateSede.isPending} color="blue">Guardar cambios</Button>
+            <Button onClick={handleUpdateSede} loading={updateSede.isPending} color="brand">Guardar cambios</Button>
           </Group>
         </Stack>
       </Modal>

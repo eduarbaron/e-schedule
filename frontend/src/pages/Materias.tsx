@@ -119,7 +119,7 @@ export function Materias() {
         </Paper>
       )}
 
-      <Modal opened={opened} onClose={close} title="Nueva materia">
+      <Modal opened={opened} onClose={close} title="Nueva materia" size="md">
         <Stack gap="sm">
           <TextInput
             label="Nombre de la materia"

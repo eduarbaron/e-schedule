@@ -317,7 +317,7 @@ function MateriasPrograma({ programa, materias }: { programa: Programa; materias
         </Accordion>
       )}
 
-      <Modal opened={editOpened} onClose={closeEdit} title={`Editar: ${editingMateria?.nombre}`}>
+      <Modal opened={editOpened} onClose={closeEdit} title={`Editar: ${editingMateria?.nombre}`} size="md">
         <Stack gap="sm">
           <TextInput
             label="Nombre de la materia"
@@ -350,12 +350,12 @@ function MateriasPrograma({ programa, materias }: { programa: Programa; materias
           />
           <Group justify="flex-end" mt="sm">
             <Button variant="light" onClick={closeEdit}>Cancelar</Button>
-            <Button onClick={handleUpdate} loading={updateMateria.isPending} color="blue">Guardar cambios</Button>
+            <Button onClick={handleUpdate} loading={updateMateria.isPending} color="brand">Guardar cambios</Button>
           </Group>
         </Stack>
       </Modal>
 
-      <Modal opened={opened} onClose={close} title={`Nueva materia — ${programa.nombre}`}>
+      <Modal opened={opened} onClose={close} title={`Nueva materia — ${programa.nombre}`} size="md">
         <Stack gap="sm">
           <TextInput
             label="Nombre de la materia"
@@ -628,7 +628,7 @@ export function Programas() {
         </Accordion>
       )}
 
-      <Modal opened={opened} onClose={close} title="Nuevo programa académico">
+      <Modal opened={opened} onClose={close} title="Nuevo programa académico" size="md">
         <Stack gap="sm">
           <TextInput
             label="Nombre del programa"
@@ -694,7 +694,7 @@ export function Programas() {
         </Stack>
       </Modal>
 
-      <Modal opened={editOpened} onClose={closeEdit} title={`Editar programa${editingPrograma ? ` — ${editingPrograma.nombre}` : ''}`}>
+      <Modal opened={editOpened} onClose={closeEdit} title={`Editar programa${editingPrograma ? ` — ${editingPrograma.nombre}` : ''}`} size="md">
         <Stack gap="sm">
           <TextInput
             label="Nombre del programa"
@@ -751,7 +751,7 @@ export function Programas() {
           />
           <Group justify="flex-end" mt="sm">
             <Button variant="light" onClick={closeEdit}>Cancelar</Button>
-            <Button onClick={handleUpdatePrograma} loading={updatePrograma.isPending} color="blue">
+            <Button onClick={handleUpdatePrograma} loading={updatePrograma.isPending} color="brand">
               Guardar cambios
             </Button>
           </Group>

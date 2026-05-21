@@ -326,7 +326,7 @@ export function Sedes() {
 
           <Group justify="flex-end" mt="sm">
             <Button variant="light" onClick={closeEdit}>Cancelar</Button>
-            <Button onClick={handleUpdate} loading={updateSede.isPending} color="blue">
+            <Button onClick={handleUpdate} loading={updateSede.isPending} color="brand">
               Guardar cambios
             </Button>
           </Group>

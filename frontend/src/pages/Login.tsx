@@ -41,7 +41,7 @@ function BootstrapAdmin({ onCreated }: { onCreated: () => void }) {
   return (
     <form onSubmit={handleSubmit}>
       <Stack gap="md">
-        <Alert icon={<ShieldCheck size={16} />} color="blue" variant="light" radius="md">
+        <Alert icon={<ShieldCheck size={16} />} color="brand" variant="light" radius="md">
           Es la primera vez que se usa e-Schedule. Crea el usuario administrador para comenzar.
         </Alert>
 
@@ -81,7 +81,7 @@ function BootstrapAdmin({ onCreated }: { onCreated: () => void }) {
           </Alert>
         )}
 
-        <Button type="submit" fullWidth loading={loading} color="blue">
+        <Button type="submit" fullWidth loading={loading} color="brand">
           Crear administrador
         </Button>
       </Stack>
@@ -135,7 +135,7 @@ function LoginForm() {
           </Alert>
         )}
 
-        <Button type="submit" fullWidth loading={loading} style={{ background: 'linear-gradient(90deg, #528BC9, #3f73aa)' }}>
+        <Button type="submit" fullWidth loading={loading} color="brand">
           Ingresar
         </Button>
       </Stack>

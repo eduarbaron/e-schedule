@@ -33,6 +33,7 @@ import { DIA_LABELS } from '../types';
 const DIAS = ['L', 'M', 'X', 'J', 'V', 'S'];
 const HORAS = Array.from({ length: 17 }, (_, i) => `${String(i + 6).padStart(2, '0')}:00`);
 const DIA_OPTIONS = DIAS.map(d => ({ value: d, label: DIA_LABELS[d] }));
+const iconButtonColumn = { flex: '0 0 36px' };
 const semestreOptionsForPrograma = (programa?: Programa | null) => {
   const total = Math.max(1, Math.min(10, Number(programa?.numero_semestres ?? 10)));
   return Array.from({ length: total }, (_, i) => ({
@@ -329,10 +330,10 @@ export function PlantillasClases() {
                 </Button>
               </Group>
               {form.jornadas.map((jornada, index) => (
-                <Group key={index} grow align="flex-end">
+                <Group key={index} grow align="flex-end" wrap="nowrap">
                   <Select label={`Inicio ${index + 1}`} data={HORAS} value={jornada.hora_inicio} onChange={v => setJornada(index, { hora_inicio: v || '07:00' })} />
                   <Select label={`Fin ${index + 1}`} data={HORAS} value={jornada.hora_fin} onChange={v => setJornada(index, { hora_fin: v || '09:00' })} />
-                  <ActionIcon variant="light" color="red" onClick={() => setForm(f => ({ ...f, jornadas: f.jornadas.filter((_, idx) => idx !== index) }))} disabled={form.jornadas.length === 1}>
+                  <ActionIcon style={iconButtonColumn} variant="light" color="red" onClick={() => setForm(f => ({ ...f, jornadas: f.jornadas.filter((_, idx) => idx !== index) }))} disabled={form.jornadas.length === 1}>
                     <Trash2 size={16} />
                   </ActionIcon>
                 </Group>
@@ -349,7 +350,7 @@ export function PlantillasClases() {
                 </Button>
               </Group>
               {form.semestres.map((semestre, index) => (
-                <Group key={index} grow align="flex-end">
+                <Group key={index} grow align="flex-end" wrap="nowrap">
                   <Select
                     label="Semestre del programa"
                     data={semestreOptions}
@@ -358,7 +359,7 @@ export function PlantillasClases() {
                     searchable
                   />
                   <NumberInput label="Grupos" min={1} max={20} value={semestre.grupos} onChange={v => setSemestre(index, { grupos: Number(v) || 1 })} />
-                  <ActionIcon variant="light" color="red" onClick={() => setForm(f => ({ ...f, semestres: f.semestres.filter((_, idx) => idx !== index) }))} disabled={form.semestres.length === 1}>
+                  <ActionIcon style={iconButtonColumn} variant="light" color="red" onClick={() => setForm(f => ({ ...f, semestres: f.semestres.filter((_, idx) => idx !== index) }))} disabled={form.semestres.length === 1}>
                     <Trash2 size={16} />
                   </ActionIcon>
                 </Group>

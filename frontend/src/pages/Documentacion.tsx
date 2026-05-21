@@ -737,6 +737,11 @@ function TabAsignaciones() {
                 La asignación masiva permite revisar todas las propuestas del motor <strong>antes de confirmarlas</strong>.
                 El sistema genera un borrador con todos los candidatos óptimos y tú decides cuáles confirmar o descartar.
               </Text>
+              <DocScreenshot
+                name="asignaciones"
+                title="Entrada a asignación masiva"
+                caption="Desde la vista de asignaciones se accede al borrador masivo, la asignación automática y la asignación manual."
+              />
               <Text fw={600} size="sm">Flujo del borrador:</Text>
               <List size="sm" spacing={4}>
                 <List.Item>Haz clic en <Badge size="xs" color="teal">Asignación masiva</Badge> en la pantalla de Asignaciones.</List.Item>
@@ -770,6 +775,11 @@ function TabVisualizacion() {
                 El Dashboard muestra un resumen ejecutivo del estado del período de trabajo seleccionado.
                 Todas las métricas se actualizan en tiempo real cuando cambias el período en el selector del encabezado.
               </Text>
+              <DocScreenshot
+                name="dashboard"
+                title="Dashboard general"
+                caption="Resumen visual de capacidad docente, demanda académica, cobertura de clases y alertas del período seleccionado."
+              />
               <BTable>
                 <Table.Thead>
                   <Table.Tr>

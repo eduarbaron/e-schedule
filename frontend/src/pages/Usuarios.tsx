@@ -215,7 +215,7 @@ export function Usuarios() {
                       <Tooltip label="Restablecer contraseña">
                         <ActionIcon
                           variant="light"
-                          color="blue"
+                          color="brand"
                           size="sm"
                           onClick={() => { setSelectedId(u.id); setResetForm({ password: '', confirm: '' }); setResetError(''); openReset(); }}
                         >
@@ -241,7 +241,7 @@ export function Usuarios() {
             <PasswordInput label="Confirmar contraseña" required value={nuevoForm.confirm} onChange={e => setNuevoForm(f => ({ ...f, confirm: e.target.value }))} />
             {nuevoError && <Alert icon={<AlertTriangle size={14} />} color="red" variant="light" radius="md">{nuevoError}</Alert>}
             <Group justify="flex-end" mt="xs">
-              <Button variant="default" onClick={closeCrear}>Cancelar</Button>
+              <Button variant="light" onClick={closeCrear}>Cancelar</Button>
               <Button type="submit" loading={crearUsuario.isPending}>Crear coordinador</Button>
             </Group>
           </Stack>
@@ -256,8 +256,8 @@ export function Usuarios() {
             <PasswordInput label="Confirmar nueva contraseña" required value={resetForm.confirm} onChange={e => setResetForm(f => ({ ...f, confirm: e.target.value }))} />
             {resetError && <Alert icon={<AlertTriangle size={14} />} color="red" variant="light" radius="md">{resetError}</Alert>}
             <Group justify="flex-end" mt="xs">
-              <Button variant="default" onClick={closeReset}>Cancelar</Button>
-              <Button type="submit" loading={resetPassword.isPending} color="blue">Restablecer</Button>
+              <Button variant="light" onClick={closeReset}>Cancelar</Button>
+              <Button type="submit" loading={resetPassword.isPending} color="brand">Restablecer</Button>
             </Group>
           </Stack>
         </form>

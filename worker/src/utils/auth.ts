@@ -81,12 +81,20 @@ function isSecureRequest(url: string): boolean {
 }
 
 export function buildSetCookieHeader(token: string, requestUrl: string): string {
-  const secure = isSecureRequest(requestUrl) ? '; Secure' : '';
-  return `${COOKIE_NAME}=${token}; HttpOnly${secure}; SameSite=Lax; Path=/; Max-Age=${SESSION_DURATION_SECONDS}`;
+  const https = isSecureRequest(requestUrl);
+  // SameSite=None requiere Secure y solo funciona sobre HTTPS.
+  // Cuando el frontend y la API están en dominios distintos (Railway + Cloudflare),
+  // el navegador solo enviará la cookie si es SameSite=None;Secure.
+  const securePart = https ? '; Secure' : '';
+  const sameSite = https ? 'None' : 'Lax';
+  return `${COOKIE_NAME}=${token}; HttpOnly${securePart}; SameSite=${sameSite}; Path=/; Max-Age=${SESSION_DURATION_SECONDS}`;
 }
 
-export function buildClearCookieHeader(): string {
-  return `${COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`;
+export function buildClearCookieHeader(requestUrl: string): string {
+  const https = isSecureRequest(requestUrl);
+  const securePart = https ? '; Secure' : '';
+  const sameSite = https ? 'None' : 'Lax';
+  return `${COOKIE_NAME}=; HttpOnly${securePart}; SameSite=${sameSite}; Path=/; Max-Age=0`;
 }
 
 export function getSessionToken(cookieHeader: string | null): string | null {

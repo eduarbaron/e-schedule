@@ -155,7 +155,7 @@ auth.post('/logout', async (c) => {
     status: 200,
     headers: {
       'Content-Type': 'application/json',
-      'Set-Cookie': buildClearCookieHeader(),
+      'Set-Cookie': buildClearCookieHeader(c.req.url),
     },
   });
 });

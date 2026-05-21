@@ -22,7 +22,19 @@ import dev from './routes/dev';
 const app = new Hono<AppEnv>();
 
 app.use('*', logger());
-app.use('*', cors({ origin: '*', allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] }));
+
+// CORS dinámico: lee ALLOWED_ORIGIN de la variable de entorno del worker.
+// En desarrollo acepta localhost:5173; en producción usa el dominio Railway.
+// credentials:true es necesario para que el navegador envíe la cookie HTTP-only.
+app.use('*', async (c, next) => {
+  const origin = c.env.ALLOWED_ORIGIN ?? 'http://localhost:5173';
+  return cors({
+    origin,
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+  })(c, next);
+});
 
 // ─── Rutas públicas ───────────────────────────────────────────────────────────
 app.get('/api/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }));

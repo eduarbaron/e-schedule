@@ -129,6 +129,8 @@ export interface ClaseAcademica {
 
 export type Bindings = {
   e_schedule_db: D1Database;
+  /** URL del frontend permitido en CORS (ej: https://e-schedule.railway.app) */
+  ALLOWED_ORIGIN?: string;
 };
 
 // ─── Auth ────────────────────────────────────────────────────────────────────

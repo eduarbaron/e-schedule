@@ -1,0 +1,32 @@
+# Dependencias (se instalan dentro del contenedor)
+node_modules
+frontend/node_modules
+worker/node_modules
+
+# Builds anteriores
+frontend/dist
+worker/dist
+
+# Worker (no se despliega en Railway)
+worker/
+
+# Archivos de desarrollo y logs
+*.log
+*.err.log
+*.out.log
+frontend-dev.*
+worker-dev.*
+
+# Git
+.git
+.gitignore
+
+# Variables de entorno locales
+.env
+.env.*
+frontend/.env
+frontend/.env.*
+
+# Archivos de SO
+.DS_Store
+Thumbs.db
