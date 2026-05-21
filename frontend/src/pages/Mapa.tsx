@@ -33,7 +33,7 @@ export function Mapa() {
   const asignacionesPorSede = (sedeId: string) =>
     asignaciones.filter((a: any) => a.sede_id === sedeId);
 
-  const centroMapa: [number, number] = [5.53, -73.37];
+  const centroMapa: [number, number] = [8.7479, -75.8814]; // Montería, Córdoba
 
   return (
     <Stack gap="lg">
@@ -74,7 +74,7 @@ export function Mapa() {
       <Paper withBorder radius="md" style={{ overflow: 'hidden' }}>
         <MapContainer
           center={centroMapa}
-          zoom={9}
+          zoom={12}
           style={{ height: 520, width: '100%' }}
         >
           <TileLayer
