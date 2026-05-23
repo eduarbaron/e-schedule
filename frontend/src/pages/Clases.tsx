@@ -24,7 +24,7 @@ import {
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
-import { CalendarDays, CalendarPlus, Clock3, FileSpreadsheet, Info, Settings2, Trash2, Wand2 } from 'lucide-react';
+import { CalendarDays, CalendarPlus, Clock3, FileSpreadsheet, Info, Plus, Settings2, Trash2, Wand2 } from 'lucide-react';
 import {
   useClases,
   useCreateClase,
@@ -51,6 +51,8 @@ const DIAS = ['L', 'M', 'X', 'J', 'V', 'S'];
 const HORAS = Array.from({ length: 17 }, (_, i) => `${String(i + 6).padStart(2, '0')}:00`);
 const DIA_OPTIONS = DIAS.map(d => ({ value: d, label: d }));
 const iconButtonColumn = { flex: '0 0 36px' };
+const timeInputColumn = { flex: '1 1 92px', minWidth: 0 };
+const compactNumberColumn = { flex: '0 0 112px' };
 const SEMANA_OPTIONS = [
   { value: 'A', label: 'Semana A' },
   { value: 'B', label: 'Semana B' },
@@ -89,6 +91,34 @@ type JornadaForm = {
   hora_inicio: string;
   hora_fin: string;
 };
+
+type DiaConfigForm = {
+  dia_semana: string;
+  jornadas: JornadaForm[];
+  max_clases: number | null;
+  break_minutos: number;
+};
+
+const defaultJornadas = (): JornadaForm[] => [
+  { hora_inicio: '07:00', hora_fin: '13:00' },
+  { hora_inicio: '14:00', hora_fin: '17:00' },
+];
+
+const diasConfigDesdeLegacy = (dias: string[], jornadas: JornadaForm[]): DiaConfigForm[] =>
+  dias.map(dia_semana => ({
+    dia_semana,
+    jornadas: jornadas.length > 0 ? jornadas : defaultJornadas(),
+    max_clases: null,
+    break_minutos: 0,
+  }));
+
+const syncDiasConfig = (dias: string[], current: DiaConfigForm[], fallback: JornadaForm[]) =>
+  dias.map(dia_semana => current.find(dia => dia.dia_semana === dia_semana) ?? {
+    dia_semana,
+    jornadas: fallback.length > 0 ? fallback : defaultJornadas(),
+    max_clases: null,
+    break_minutos: 0,
+  });
 
 export function Clases() {
   const confirm = useConfirm();
@@ -131,10 +161,7 @@ export function Clases() {
     semestres_por_sede: {} as Record<string, string[]>,
     grupos_por_semestre: 2,
     dias_semana: ['S'] as string[],
-    jornadas: [
-      { hora_inicio: '07:00', hora_fin: '13:00' },
-      { hora_inicio: '14:00', hora_fin: '17:00' },
-    ] as JornadaForm[],
+    jornadas: defaultJornadas() as JornadaForm[],
     reemplazar_existentes: false,
   });
 
@@ -149,10 +176,8 @@ export function Clases() {
     nombre: '',
     programa_id: '',
     dias_semana: ['S'] as string[],
-    jornadas: [
-      { hora_inicio: '07:00', hora_fin: '13:00' },
-      { hora_inicio: '14:00', hora_fin: '17:00' },
-    ] as JornadaForm[],
+    jornadas: defaultJornadas() as JornadaForm[],
+    dias_config: diasConfigDesdeLegacy(['S'], defaultJornadas()) as DiaConfigForm[],
     semestres: [
       { semestre: 1, grupos: 1 },
     ] as { semestre: number; grupos: number }[],
@@ -320,27 +345,75 @@ export function Clases() {
       programa_id: generatorForm.programa_id,
       dias_semana: generatorForm.dias_semana,
       jornadas: generatorForm.jornadas,
+      dias_config: diasConfigDesdeLegacy(generatorForm.dias_semana, generatorForm.jornadas),
       semestres: semestresGenerador.slice(0, 1).map(s => ({ semestre: Number(s.value), grupos: generatorForm.grupos_por_semestre })),
     });
     openTemplate();
   };
 
   const openEditTemplate = (template: ClaseTemplate) => {
+    const diasSemana = template.dias_semana?.length ? template.dias_semana : ['S'];
+    const jornadas = template.jornadas.length > 0 ? template.jornadas : generatorForm.jornadas;
     setTemplateForm({
       id: template.id,
       nombre: template.nombre,
       programa_id: template.programa_id ?? '',
-      dias_semana: template.dias_semana?.length ? template.dias_semana : ['S'],
-      jornadas: template.jornadas.length > 0 ? template.jornadas : generatorForm.jornadas,
+      dias_semana: diasSemana,
+      jornadas,
+      dias_config: Array.isArray(template.dias_config) && template.dias_config.length > 0
+        ? template.dias_config.map(dia => ({ ...dia, break_minutos: Number(dia.break_minutos ?? 0) }))
+        : diasConfigDesdeLegacy(diasSemana, jornadas),
       semestres: template.semestres.length > 0 ? template.semestres : [{ semestre: 1, grupos: 1 }],
     });
     openTemplate();
   };
 
-  const setTemplateJornada = (index: number, patch: Partial<JornadaForm>) => {
+  const setTemplateDiasSemana = (dias: string[]) => {
     setTemplateForm(f => ({
       ...f,
-      jornadas: f.jornadas.map((jornada, idx) => idx === index ? { ...jornada, ...patch } : jornada),
+      dias_semana: dias,
+      dias_config: syncDiasConfig(dias, f.dias_config, f.jornadas),
+    }));
+  };
+
+  const setTemplateDiaJornada = (dia: string, index: number, patch: Partial<JornadaForm>) => {
+    setTemplateForm(f => ({
+      ...f,
+      dias_config: f.dias_config.map(config => config.dia_semana === dia
+        ? { ...config, jornadas: config.jornadas.map((jornada, idx) => idx === index ? { ...jornada, ...patch } : jornada) }
+        : config),
+    }));
+  };
+
+  const addTemplateDiaJornada = (dia: string) => {
+    setTemplateForm(f => ({
+      ...f,
+      dias_config: f.dias_config.map(config => config.dia_semana === dia
+        ? { ...config, jornadas: [...config.jornadas, { hora_inicio: '07:00', hora_fin: '09:00' }] }
+        : config),
+    }));
+  };
+
+  const removeTemplateDiaJornada = (dia: string, index: number) => {
+    setTemplateForm(f => ({
+      ...f,
+      dias_config: f.dias_config.map(config => config.dia_semana === dia
+        ? { ...config, jornadas: config.jornadas.filter((_, idx) => idx !== index) }
+        : config),
+    }));
+  };
+
+  const setTemplateDiaMaxClases = (dia: string, value: number | null) => {
+    setTemplateForm(f => ({
+      ...f,
+      dias_config: f.dias_config.map(config => config.dia_semana === dia ? { ...config, max_clases: value } : config),
+    }));
+  };
+
+  const setTemplateDiaBreakMinutos = (dia: string, value: number) => {
+    setTemplateForm(f => ({
+      ...f,
+      dias_config: f.dias_config.map(config => config.dia_semana === dia ? { ...config, break_minutos: Math.max(0, Number(value) || 0) } : config),
     }));
   };
 
@@ -453,8 +526,9 @@ export function Clases() {
       notifications.show({ message: 'Selecciona al menos un dia de clase', color: 'red' });
       return;
     }
-    if (templateForm.jornadas.some(j => !j.hora_inicio || !j.hora_fin || j.hora_inicio >= j.hora_fin)) {
-      notifications.show({ message: 'Cada jornada debe tener hora inicio menor que hora fin', color: 'red' });
+    const diasConfig = templateForm.dias_config.filter(dia => templateForm.dias_semana.includes(dia.dia_semana));
+    if (diasConfig.some(dia => dia.jornadas.length === 0 || dia.jornadas.some(j => !j.hora_inicio || !j.hora_fin || j.hora_inicio >= j.hora_fin))) {
+      notifications.show({ message: 'Cada dia debe tener jornadas validas', color: 'red' });
       return;
     }
     if (templateForm.semestres.length === 0 || templateForm.semestres.some(s => !s.semestre || s.grupos < 1)) {
@@ -471,8 +545,9 @@ export function Clases() {
       const payload = {
         nombre: templateForm.nombre.trim(),
         programa_id: templateForm.programa_id || null,
-        dias_semana: templateForm.dias_semana,
-        jornadas: templateForm.jornadas,
+        dias_semana: diasConfig.map(dia => dia.dia_semana),
+        jornadas: diasConfig[0]?.jornadas ?? templateForm.jornadas,
+        dias_config: diasConfig,
         semestres: templateForm.semestres,
       };
       if (templateForm.id) {
@@ -907,8 +982,8 @@ export function Clases() {
                       <Paper p="xs" radius="sm" bg="gray.0" withBorder>
                         <Text size="xs" fw={600}>{templatesById.get(generatorForm.template_por_sede[sede.id])?.nombre}</Text>
                         <Text size="xs" c="dimmed">
-                          {(templatesById.get(generatorForm.template_por_sede[sede.id])?.dias_semana ?? [])
-                            .map(dia => DIA_LABELS[dia])
+                          {(templatesById.get(generatorForm.template_por_sede[sede.id])?.dias_config ?? [])
+                            .map(dia => `${DIA_LABELS[dia.dia_semana]}${dia.max_clases ? ` (${dia.max_clases})` : ''}`)
                             .join(' / ')}
                         </Text>
                         <Text size="xs" c="dimmed">
@@ -977,7 +1052,7 @@ export function Clases() {
         opened={templateOpened}
         onClose={closeTemplate}
         title={templateForm.id ? 'Editar plantilla' : 'Nueva plantilla'}
-        size="lg"
+        size="xl"
         styles={{
           content: { overflow: 'hidden' },
           body: { maxHeight: 'calc(100dvh - 140px)', overflowY: 'auto' },
@@ -1005,7 +1080,7 @@ export function Clases() {
               label="Dias de clase"
               data={DIA_OPTIONS.map(d => ({ ...d, label: DIA_LABELS[d.value] }))}
               value={templateForm.dias_semana}
-              onChange={v => setTemplateForm(f => ({ ...f, dias_semana: v }))}
+              onChange={setTemplateDiasSemana}
               clearable={false}
               required
             />
@@ -1013,41 +1088,76 @@ export function Clases() {
 
           <Paper p="sm" radius="md" withBorder>
             <Stack gap="xs">
-              <Group justify="space-between">
-                <Text size="sm" fw={700}>Jornadas</Text>
-                <Button
-                  size="xs"
-                  variant="light"
-                  onClick={() => setTemplateForm(f => ({ ...f, jornadas: [...f.jornadas, { hora_inicio: '07:00', hora_fin: '09:00' }] }))}
+              <Text size="sm" fw={700}>Franjas por dia</Text>
+              {templateForm.dias_config.map((dia, diaIndex) => (
+                <Stack
+                  key={dia.dia_semana}
+                  gap="xs"
+                  pt={diaIndex === 0 ? 0 : 'sm'}
+                  style={diaIndex === 0 ? undefined : { borderTop: '1px solid var(--mantine-color-gray-2)' }}
                 >
-                  Agregar jornada
-                </Button>
-              </Group>
-              {templateForm.jornadas.map((jornada, index) => (
-                <Group key={index} grow align="flex-end" wrap="nowrap">
-                  <Select
-                    label={`Inicio ${index + 1}`}
-                    data={HORAS}
-                    value={jornada.hora_inicio}
-                    onChange={v => setTemplateJornada(index, { hora_inicio: v || '07:00' })}
-                  />
-                  <Select
-                    label={`Fin ${index + 1}`}
-                    data={HORAS}
-                    value={jornada.hora_fin}
-                    onChange={v => setTemplateJornada(index, { hora_fin: v || '09:00' })}
-                  />
-                  <ActionIcon
-                    style={iconButtonColumn}
-                    variant="light"
-                    color="red"
-                    onClick={() => setTemplateForm(f => ({ ...f, jornadas: f.jornadas.filter((_, idx) => idx !== index) }))}
-                    disabled={templateForm.jornadas.length === 1}
-                  >
-                    <Trash2 size={16} />
-                  </ActionIcon>
-                </Group>
+                  <Group justify="space-between">
+                    <Badge variant="light" color="brand">{DIA_LABELS[dia.dia_semana]}</Badge>
+                  </Group>
+                  {dia.jornadas.map((jornada, index) => (
+                    <Group key={index} gap="sm" align="flex-end" wrap="nowrap">
+                      <Select
+                        label={`Inicio ${index + 1}`}
+                        data={HORAS}
+                        value={jornada.hora_inicio}
+                        onChange={v => setTemplateDiaJornada(dia.dia_semana, index, { hora_inicio: v || '07:00' })}
+                        styles={{ root: timeInputColumn }}
+                      />
+                      <Select
+                        label={`Fin ${index + 1}`}
+                        data={HORAS}
+                        value={jornada.hora_fin}
+                        onChange={v => setTemplateDiaJornada(dia.dia_semana, index, { hora_fin: v || '09:00' })}
+                        styles={{ root: timeInputColumn }}
+                      />
+                      <NumberInput
+                        label="Maximo"
+                        placeholder="Sin limite"
+                        min={1}
+                        max={100}
+                        value={dia.max_clases ?? ''}
+                        onChange={value => setTemplateDiaMaxClases(dia.dia_semana, typeof value === 'number' ? value : null)}
+                        styles={{ root: compactNumberColumn }}
+                      />
+                      <NumberInput
+                        label="Descanso"
+                        suffix=" min"
+                        min={0}
+                        max={240}
+                        value={dia.break_minutos ?? 0}
+                        onChange={value => setTemplateDiaBreakMinutos(dia.dia_semana, typeof value === 'number' ? value : 0)}
+                        styles={{ root: compactNumberColumn }}
+                      />
+                      <ActionIcon
+                        style={iconButtonColumn}
+                        variant="light"
+                        color="red"
+                        onClick={() => removeTemplateDiaJornada(dia.dia_semana, index)}
+                        disabled={dia.jornadas.length === 1}
+                      >
+                        <Trash2 size={16} />
+                      </ActionIcon>
+                      {index === dia.jornadas.length - 1 ? (
+                        <Tooltip label="Agregar jornada">
+                          <ActionIcon style={iconButtonColumn} variant="light" color="brand" onClick={() => addTemplateDiaJornada(dia.dia_semana)}>
+                            <Plus size={16} />
+                          </ActionIcon>
+                        </Tooltip>
+                      ) : (
+                        <div style={iconButtonColumn} />
+                      )}
+                    </Group>
+                  ))}
+                </Stack>
               ))}
+              {templateForm.dias_config.length === 0 && (
+                <Text size="sm" c="dimmed">Selecciona al menos un dia para configurar franjas.</Text>
+              )}
             </Stack>
           </Paper>
 

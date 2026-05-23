@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1120" viewBox="0 0 1800 1120">
+  <defs>
+    <style>
+      text { font-family: "Segoe UI", Arial, sans-serif; fill: #172033; }
+      .title { font-size: 48px; font-weight: 800; }
+      .subtitle { font-size: 22px; fill: #4c5b73; }
+      .lane-title { font-size: 26px; font-weight: 800; }
+      .box-title { font-size: 23px; font-weight: 750; }
+      .box-copy { font-size: 19px; fill: #334155; }
+      .small { font-size: 17px; fill: #475569; }
+      .lane { stroke-width: 2; rx: 28; }
+      .box { stroke-width: 2; rx: 18; }
+      .arrow { stroke: #52637d; stroke-width: 4; fill: none; marker-end: url(#arrow); }
+      .arrow-soft { stroke: #8aa0ba; stroke-width: 3; fill: none; marker-end: url(#arrowSoft); stroke-dasharray: 9 8; }
+    </style>
+    <marker id="arrow" markerWidth="14" markerHeight="14" refX="10" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,5 L0,10 z" fill="#52637d"/>
+    </marker>
+    <marker id="arrowSoft" markerWidth="14" markerHeight="14" refX="10" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8aa0ba"/>
+    </marker>
+    <filter id="shadow" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+
+  <rect width="1800" height="1120" fill="#f4f7fb"/>
+  <circle cx="1650" cy="110" r="180" fill="#dceaf7"/>
+  <circle cx="124" cy="1000" r="210" fill="#e2f3dd"/>
+
+  <text x="90" y="92" class="title">Arquitectura de e-Schedule</text>
+  <text x="90" y="132" class="subtitle">Frontend React, API en Cloudflare Worker y persistencia Cloudflare D1</text>
+
+  <rect x="72" y="195" width="255" height="715" class="lane" fill="#ffffff" stroke="#c8d4e4" filter="url(#shadow)"/>
+  <text x="110" y="250" class="lane-title">Usuarios</text>
+
+  <rect x="108" y="325" width="184" height="150" class="box" fill="#eef7e8" stroke="#8dbd74"/>
+  <text x="138" y="375" class="box-title">Admin</text>
+  <text x="138" y="410" class="box-copy">Gestiona usuarios,</text>
+  <text x="138" y="438" class="box-copy">datos y piloto.</text>
+
+  <rect x="108" y="530" width="184" height="150" class="box" fill="#eaf3fb" stroke="#79a6d1"/>
+  <text x="138" y="580" class="box-title">Coordinador</text>
+  <text x="138" y="615" class="box-copy">Planea clases</text>
+  <text x="138" y="643" class="box-copy">y asignaciones.</text>
+
+  <rect x="382" y="195" width="470" height="715" class="lane" fill="#ffffff" stroke="#c8d4e4" filter="url(#shadow)"/>
+  <text x="420" y="250" class="lane-title">Frontend</text>
+  <text x="420" y="284" class="small">React + Vite + Mantine</text>
+
+  <rect x="424" y="325" width="386" height="122" class="box" fill="#eaf3fb" stroke="#6f9fcb"/>
+  <text x="456" y="370" class="box-title">Pantallas operativas</text>
+  <text x="456" y="405" class="box-copy">Dashboard, docentes, clases,</text>
+  <text x="456" y="433" class="box-copy">asignaciones, mapa y reportes.</text>
+
+  <rect x="424" y="485" width="180" height="126" class="box" fill="#eef7e8" stroke="#8dbd74"/>
+  <text x="454" y="530" class="box-title">Contexts</text>
+  <text x="454" y="565" class="box-copy">Auth</text>
+  <text x="454" y="592" class="box-copy">Periodo</text>
+
+  <rect x="630" y="485" width="180" height="126" class="box" fill="#fff7e7" stroke="#e5b663"/>
+  <text x="660" y="530" class="box-title">Data hooks</text>
+  <text x="660" y="565" class="box-copy">TanStack</text>
+  <text x="660" y="592" class="box-copy">Query</text>
+
+  <rect x="424" y="650" width="386" height="122" class="box" fill="#f1edfb" stroke="#9a87d6"/>
+  <text x="456" y="695" class="box-title">Axios API client</text>
+  <text x="456" y="730" class="box-copy">JSON over /api</text>
+  <text x="456" y="758" class="box-copy">Cookie HttpOnly de sesion</text>
+
+  <rect x="900" y="195" width="475" height="715" class="lane" fill="#ffffff" stroke="#c8d4e4" filter="url(#shadow)"/>
+  <text x="938" y="250" class="lane-title">Backend API</text>
+  <text x="938" y="284" class="small">Cloudflare Worker + Hono</text>
+
+  <rect x="942" y="325" width="390" height="108" class="box" fill="#f1edfb" stroke="#9a87d6"/>
+  <text x="974" y="370" class="box-title">Middleware</text>
+  <text x="974" y="405" class="box-copy">CORS, auth y control de rol</text>
+
+  <rect x="942" y="470" width="184" height="135" class="box" fill="#eaf3fb" stroke="#6f9fcb"/>
+  <text x="972" y="515" class="box-title">Auth</text>
+  <text x="972" y="550" class="box-copy">login</text>
+  <text x="972" y="578" class="box-copy">logout / me</text>
+
+  <rect x="1148" y="470" width="184" height="135" class="box" fill="#eef7e8" stroke="#8dbd74"/>
+  <text x="1178" y="515" class="box-title">CRUD</text>
+  <text x="1178" y="550" class="box-copy">academico</text>
+  <text x="1178" y="578" class="box-copy">infraestructura</text>
+
+  <rect x="942" y="642" width="184" height="145" class="box" fill="#fff7e7" stroke="#e5b663"/>
+  <text x="972" y="687" class="box-title">Clases</text>
+  <text x="972" y="722" class="box-copy">plantillas</text>
+  <text x="972" y="750" class="box-copy">generacion</text>
+
+  <rect x="1148" y="642" width="184" height="145" class="box" fill="#fff0ee" stroke="#dd897d"/>
+  <text x="1178" y="687" class="box-title">Asignacion</text>
+  <text x="1178" y="722" class="box-copy">manual</text>
+  <text x="1178" y="750" class="box-copy">auto / masiva</text>
+
+  <rect x="1430" y="195" width="295" height="715" class="lane" fill="#ffffff" stroke="#c8d4e4" filter="url(#shadow)"/>
+  <text x="1468" y="250" class="lane-title">Datos</text>
+  <text x="1468" y="284" class="small">Cloudflare D1</text>
+
+  <rect x="1472" y="325" width="210" height="112" class="box" fill="#eaf3fb" stroke="#6f9fcb"/>
+  <text x="1504" y="370" class="box-title">usuarios</text>
+  <text x="1504" y="405" class="box-copy">sesiones</text>
+
+  <rect x="1472" y="470" width="210" height="135" class="box" fill="#eef7e8" stroke="#8dbd74"/>
+  <text x="1504" y="515" class="box-title">Estructura</text>
+  <text x="1504" y="550" class="box-copy">facultades</text>
+  <text x="1504" y="578" class="box-copy">programas</text>
+
+  <rect x="1472" y="642" width="210" height="145" class="box" fill="#fff7e7" stroke="#e5b663"/>
+  <text x="1504" y="687" class="box-title">Operacion</text>
+  <text x="1504" y="722" class="box-copy">clases</text>
+  <text x="1504" y="750" class="box-copy">asignaciones</text>
+
+  <path d="M292 400 H424" class="arrow"/>
+  <path d="M292 605 H424" class="arrow"/>
+  <path d="M617 447 V485" class="arrow"/>
+  <path d="M604 548 H630" class="arrow"/>
+  <path d="M720 611 V650" class="arrow"/>
+  <path d="M810 711 H942" class="arrow"/>
+  <path d="M1137 433 V470" class="arrow"/>
+  <path d="M1137 605 V642" class="arrow"/>
+  <path d="M1332 536 H1472" class="arrow"/>
+  <path d="M1332 714 H1472" class="arrow"/>
+
+  <rect x="424" y="828" width="386" height="56" rx="16" fill="#f8fafc" stroke="#d4dce7"/>
+  <text x="452" y="865" class="small">Mapas Leaflet + exportes PDF / Excel</text>
+  <path d="M618 772 V828" class="arrow-soft"/>
+
+  <rect x="942" y="828" width="390" height="56" rx="16" fill="#f8fafc" stroke="#d4dce7"/>
+  <text x="972" y="865" class="small">Validaciones y optimizacion del motor</text>
+  <path d="M1240 787 V828" class="arrow-soft"/>
+
+  <text x="90" y="1038" class="subtitle">Flujo base: navegador -&gt; frontend -&gt; /api -&gt; worker -&gt; D1</text>
+</svg>

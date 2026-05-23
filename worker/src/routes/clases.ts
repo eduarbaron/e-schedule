@@ -19,6 +19,7 @@ type SemestreGeneracion = {
 type ConfiguracionSedeGeneracion = {
   dias_semana?: unknown;
   jornadas?: unknown;
+  dias_config?: unknown;
   semestres?: unknown;
 };
 
@@ -28,6 +29,7 @@ type ClaseTemplateRow = {
   programa_id: string | null;
   dias_semana_json: string;
   jornadas_json: string;
+  dias_config_json?: string | null;
   semestres_json: string;
   created_at: string;
 };
@@ -38,6 +40,7 @@ type ClaseTemplate = {
   programa_id: string | null;
   dias_semana: DiaSemana[];
   jornadas: unknown[];
+  dias_config: DiaConfigGeneracion[];
   semestres: unknown[];
   created_at: string;
 };
@@ -49,11 +52,14 @@ type SedeTemplateInput = {
 
 type FranjaGeneracion = JornadaGeneracion & {
   dia_semana: DiaSemana;
+  max_clases?: number | null;
+  break_minutos?: number;
 };
 
 type CursorHorario = {
   jornada: number;
   minutos: number;
+  clasesPorDia: Record<string, number>;
 };
 
 const DIAS_VALIDOS = ['L', 'M', 'X', 'J', 'V', 'S'];
@@ -83,8 +89,65 @@ function normalizarDias(input: unknown): DiaSemana[] {
   return [...new Set(raw.map(String).filter((dia): dia is DiaSemana => DIAS_VALIDOS.includes(dia)))];
 }
 
+type DiaConfigGeneracion = {
+  dia_semana: DiaSemana;
+  jornadas: JornadaGeneracion[];
+  max_clases: number | null;
+  break_minutos: number;
+};
+
+function normalizarMaxClases(input: unknown): number | null {
+  if (input === null || input === undefined || input === '') return null;
+  const value = Math.floor(Number(input));
+  return Number.isFinite(value) && value > 0 ? Math.min(100, value) : null;
+}
+
+function normalizarBreakMinutos(input: unknown): number {
+  if (input === null || input === undefined || input === '') return 0;
+  const value = Math.floor(Number(input));
+  return Number.isFinite(value) && value > 0 ? Math.min(240, value) : 0;
+}
+
+function normalizarDiasConfig(input: unknown): DiaConfigGeneracion[] {
+  const raw = Array.isArray(input) ? input : [];
+  const byDia = new Map<DiaSemana, DiaConfigGeneracion>();
+
+  raw.forEach((item: any) => {
+    const dia = String(item?.dia_semana ?? '');
+    if (!DIAS_VALIDOS.includes(dia)) return;
+    const jornadas = normalizarJornadas(item?.jornadas);
+    if (jornadas.length === 0) return;
+    byDia.set(dia as DiaSemana, {
+      dia_semana: dia as DiaSemana,
+      jornadas,
+      max_clases: normalizarMaxClases(item?.max_clases),
+      break_minutos: normalizarBreakMinutos(item?.break_minutos),
+    });
+  });
+
+  return DIAS_VALIDOS
+    .filter((dia): dia is DiaSemana => byDia.has(dia as DiaSemana))
+    .map(dia => byDia.get(dia)!);
+}
+
+function diasConfigDesdeLegacy(dias: DiaSemana[], jornadas: JornadaGeneracion[]): DiaConfigGeneracion[] {
+  if (dias.length === 0 || jornadas.length === 0) return [];
+  return dias.map(dia_semana => ({ dia_semana, jornadas, max_clases: null, break_minutos: 0 }));
+}
+
+function expandirFranjasDesdeDiasConfig(diasConfig: DiaConfigGeneracion[]): FranjaGeneracion[] {
+  return diasConfig.flatMap(diaConfig =>
+    diaConfig.jornadas.map(jornada => ({
+      ...jornada,
+      dia_semana: diaConfig.dia_semana,
+      max_clases: diaConfig.max_clases,
+      break_minutos: diaConfig.break_minutos,
+    }))
+  );
+}
+
 function expandirFranjas(dias: DiaSemana[], jornadas: JornadaGeneracion[]): FranjaGeneracion[] {
-  return dias.flatMap(dia_semana => jornadas.map(jornada => ({ ...jornada, dia_semana })));
+  return expandirFranjasDesdeDiasConfig(diasConfigDesdeLegacy(dias, jornadas));
 }
 
 function totalMinutosJornadas(jornadas: FranjaGeneracion[]) {
@@ -92,17 +155,26 @@ function totalMinutosJornadas(jornadas: FranjaGeneracion[]) {
 }
 
 function crearCursor(jornadas: FranjaGeneracion[]): CursorHorario {
-  return { jornada: 0, minutos: toMinutes(jornadas[0].hora_inicio) };
+  return { jornada: 0, minutos: toMinutes(jornadas[0].hora_inicio), clasesPorDia: {} };
 }
 
 function siguienteHorario(cursor: CursorHorario, jornadas: FranjaGeneracion[], horas: number) {
   const duracion = horas * 60;
   while (cursor.jornada < jornadas.length) {
     const jornada = jornadas[cursor.jornada];
+    const clasesDia = cursor.clasesPorDia[jornada.dia_semana] ?? 0;
+    if (jornada.max_clases !== null && jornada.max_clases !== undefined && clasesDia >= jornada.max_clases) {
+      cursor.jornada++;
+      if (cursor.jornada < jornadas.length) {
+        cursor.minutos = toMinutes(jornadas[cursor.jornada].hora_inicio);
+      }
+      continue;
+    }
     const finJornada = toMinutes(jornada.hora_fin);
     if (cursor.minutos + duracion <= finJornada) {
       const inicio = cursor.minutos;
-      cursor.minutos += duracion;
+      cursor.minutos += duracion + (jornada.break_minutos ?? 0);
+      cursor.clasesPorDia[jornada.dia_semana] = clasesDia + 1;
       return { dia_semana: jornada.dia_semana, hora_inicio: toTime(inicio), hora_fin: toTime(inicio + duracion) };
     }
     cursor.jornada++;
@@ -175,12 +247,16 @@ function parseJsonArray(value: string | null) {
 }
 
 function serializarTemplate(row: ClaseTemplateRow): ClaseTemplate {
+  const diasSemana = normalizarDias(parseJsonArray(row.dias_semana_json));
+  const jornadas = normalizarJornadas(parseJsonArray(row.jornadas_json));
+  const diasConfig = normalizarDiasConfig(parseJsonArray(row.dias_config_json ?? null));
   return {
     id: row.id,
     nombre: row.nombre,
     programa_id: row.programa_id,
-    dias_semana: normalizarDias(parseJsonArray(row.dias_semana_json)),
-    jornadas: parseJsonArray(row.jornadas_json),
+    dias_semana: diasConfig.length > 0 ? diasConfig.map(dia => dia.dia_semana) : diasSemana,
+    jornadas: jornadas,
+    dias_config: diasConfig.length > 0 ? diasConfig : diasConfigDesdeLegacy(diasSemana, jornadas),
     semestres: parseJsonArray(row.semestres_json),
     created_at: row.created_at,
   };
@@ -256,22 +332,26 @@ clases.post('/templates', async (c) => {
   const body = await c.req.json();
   const nombre = String(body.nombre ?? '').trim();
   const programaId = body.programa_id ? String(body.programa_id) : null;
-  const diasSemana = normalizarDias(body.dias_semana);
-  const jornadas = normalizarJornadas(body.jornadas);
+  const jornadasLegacy = normalizarJornadas(body.jornadas);
+  const diasConfigBody = normalizarDiasConfig(body.dias_config);
+  const diasSemanaLegacy = normalizarDias(body.dias_semana);
+  const diasConfig = diasConfigBody.length > 0 ? diasConfigBody : diasConfigDesdeLegacy(diasSemanaLegacy, jornadasLegacy);
+  const diasSemana = diasConfig.map(dia => dia.dia_semana);
+  const jornadas = jornadasLegacy.length > 0 ? jornadasLegacy : diasConfig[0]?.jornadas ?? [];
   const semestres = normalizarSemestresGeneracion(body.semestres, [], 1);
 
   if (!nombre) return c.json({ error: 'nombre es requerido' }, 400);
   if (diasSemana.length === 0) return c.json({ error: 'Selecciona al menos un día de clase' }, 400);
-  if (jornadas.length === 0) return c.json({ error: 'Define al menos una jornada válida' }, 400);
+  if (diasConfig.some(dia => dia.jornadas.length === 0)) return c.json({ error: 'Define al menos una jornada valida por dia' }, 400);
   if (semestres.length === 0) return c.json({ error: 'Define al menos un semestre con grupos' }, 400);
   const semestresError = await validarSemestresTemplate(c.env.e_schedule_db, programaId, semestres);
   if (semestresError) return c.json({ error: semestresError }, 400);
 
   const id = crypto.randomUUID();
   await c.env.e_schedule_db.prepare(`
-    INSERT INTO clase_templates (id, nombre, programa_id, dias_semana_json, jornadas_json, semestres_json)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).bind(id, nombre, programaId, JSON.stringify(diasSemana), JSON.stringify(jornadas), JSON.stringify(semestres)).run();
+    INSERT INTO clase_templates (id, nombre, programa_id, dias_semana_json, jornadas_json, dias_config_json, semestres_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).bind(id, nombre, programaId, JSON.stringify(diasSemana), JSON.stringify(jornadas), JSON.stringify(diasConfig), JSON.stringify(semestres)).run();
 
   const created = await c.env.e_schedule_db.prepare('SELECT * FROM clase_templates WHERE id = ?').bind(id).first<ClaseTemplateRow>();
   return c.json(created ? serializarTemplate(created) : { id }, 201);
@@ -285,22 +365,29 @@ clases.put('/templates/:id', async (c) => {
 
   const nombre = String(body.nombre ?? existing.nombre).trim();
   const programaId = body.programa_id === undefined ? existing.programa_id : (body.programa_id ? String(body.programa_id) : null);
-  const diasSemana = normalizarDias(body.dias_semana ?? parseJsonArray(existing.dias_semana_json));
-  const jornadas = normalizarJornadas(body.jornadas ?? parseJsonArray(existing.jornadas_json));
+  const jornadasLegacy = normalizarJornadas(body.jornadas ?? parseJsonArray(existing.jornadas_json));
+  const diasSemanaLegacy = normalizarDias(body.dias_semana ?? parseJsonArray(existing.dias_semana_json));
+  const diasConfigExisting = normalizarDiasConfig(parseJsonArray(existing.dias_config_json ?? null));
+  const diasConfigBody = body.dias_config === undefined ? [] : normalizarDiasConfig(body.dias_config);
+  const diasConfig = body.dias_config === undefined
+    ? (diasConfigExisting.length > 0 ? diasConfigExisting : diasConfigDesdeLegacy(diasSemanaLegacy, jornadasLegacy))
+    : diasConfigBody.length > 0 ? diasConfigBody : diasConfigDesdeLegacy(diasSemanaLegacy, jornadasLegacy);
+  const diasSemana = diasConfig.map(dia => dia.dia_semana);
+  const jornadas = jornadasLegacy.length > 0 ? jornadasLegacy : diasConfig[0]?.jornadas ?? [];
   const semestres = normalizarSemestresGeneracion(body.semestres ?? parseJsonArray(existing.semestres_json), [], 1);
 
   if (!nombre) return c.json({ error: 'nombre es requerido' }, 400);
   if (diasSemana.length === 0) return c.json({ error: 'Selecciona al menos un día de clase' }, 400);
-  if (jornadas.length === 0) return c.json({ error: 'Define al menos una jornada válida' }, 400);
+  if (diasConfig.some(dia => dia.jornadas.length === 0)) return c.json({ error: 'Define al menos una jornada valida por dia' }, 400);
   if (semestres.length === 0) return c.json({ error: 'Define al menos un semestre con grupos' }, 400);
   const semestresError = await validarSemestresTemplate(c.env.e_schedule_db, programaId, semestres);
   if (semestresError) return c.json({ error: semestresError }, 400);
 
   await c.env.e_schedule_db.prepare(`
     UPDATE clase_templates
-    SET nombre = ?, programa_id = ?, dias_semana_json = ?, jornadas_json = ?, semestres_json = ?
+    SET nombre = ?, programa_id = ?, dias_semana_json = ?, jornadas_json = ?, dias_config_json = ?, semestres_json = ?
     WHERE id = ?
-  `).bind(nombre, programaId, JSON.stringify(diasSemana), JSON.stringify(jornadas), JSON.stringify(semestres), id).run();
+  `).bind(nombre, programaId, JSON.stringify(diasSemana), JSON.stringify(jornadas), JSON.stringify(diasConfig), JSON.stringify(semestres), id).run();
 
   const updated = await c.env.e_schedule_db.prepare('SELECT * FROM clase_templates WHERE id = ?').bind(id).first<ClaseTemplateRow>();
   return c.json(updated ? serializarTemplate(updated) : { id });
@@ -524,19 +611,25 @@ clases.post('/generar', async (c) => {
       : jornadasTemplate.length > 0
         ? jornadasTemplate
       : jornadas;
+    const diasConfig = normalizarDiasConfig(configSede.dias_config);
+    const diasConfigSede = diasConfig.length > 0
+      ? diasConfig
+      : templateSede?.dias_config?.length
+        ? templateSede.dias_config
+        : diasConfigDesdeLegacy(diasSede, jornadasSede);
     const semestresLegacy = Array.isArray(semestresPorSede[sede.id])
       ? (semestresPorSede[sede.id] as unknown[]).map(semestre => ({ semestre, grupos: gruposPorSemestre }))
       : undefined;
     const semestres = normalizarSemestresGeneracion(configSede.semestres ?? templateSede?.semestres ?? semestresLegacy, semestresPrograma, gruposPorSemestre);
-    const franjasSede = expandirFranjas(diasSede, jornadasSede);
+    const franjasSede = expandirFranjasDesdeDiasConfig(diasConfigSede);
     const capacidadHoras = totalMinutosJornadas(franjasSede) / 60;
 
-    if (diasSede.length === 0) {
+    if (diasConfigSede.length === 0) {
       errores.push(`Selecciona al menos un día para ${sede.nombre}`);
       continue;
     }
-    if (jornadasSede.length === 0) {
-      errores.push(`Define al menos una jornada válida para ${sede.nombre}`);
+    if (franjasSede.length === 0) {
+      errores.push(`Define al menos una jornada valida para ${sede.nombre}`);
       continue;
     }
 

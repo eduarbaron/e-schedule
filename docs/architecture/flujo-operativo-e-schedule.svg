@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1060" viewBox="0 0 1800 1060">
+  <defs>
+    <style>
+      text { font-family: "Segoe UI", Arial, sans-serif; fill: #172033; }
+      .title { font-size: 48px; font-weight: 800; }
+      .subtitle { font-size: 22px; fill: #4c5b73; }
+      .box-title { font-size: 23px; font-weight: 750; }
+      .box-copy { font-size: 18px; fill: #334155; }
+      .step { font-size: 20px; font-weight: 800; fill: #ffffff; }
+      .arrow { stroke: #53657d; stroke-width: 4; fill: none; marker-end: url(#arrow); }
+      .box { stroke-width: 2; rx: 22; }
+    </style>
+    <marker id="arrow" markerWidth="14" markerHeight="14" refX="10" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,5 L0,10 z" fill="#53657d"/>
+    </marker>
+    <filter id="shadow" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+
+  <rect width="1800" height="1060" fill="#f4f7fb"/>
+  <rect x="72" y="184" width="1656" height="770" rx="34" fill="#ffffff" stroke="#cad6e6" stroke-width="2" filter="url(#shadow)"/>
+  <text x="90" y="92" class="title">Flujo operativo de e-Schedule</text>
+  <text x="90" y="132" class="subtitle">De la configuracion institucional a la revision del horario docente</text>
+
+  <rect x="120" y="260" width="290" height="150" class="box" fill="#eaf3fb" stroke="#6f9fcb"/>
+  <circle cx="155" cy="295" r="24" fill="#3f73aa"/>
+  <text x="149" y="302" class="step">1</text>
+  <text x="195" y="303" class="box-title">Estructura</text>
+  <text x="150" y="350" class="box-copy">Facultades, departamentos</text>
+  <text x="150" y="380" class="box-copy">y programas academicos.</text>
+
+  <rect x="485" y="260" width="290" height="150" class="box" fill="#eef7e8" stroke="#8dbd74"/>
+  <circle cx="520" cy="295" r="24" fill="#6da040"/>
+  <text x="514" y="302" class="step">2</text>
+  <text x="560" y="303" class="box-title">Infraestructura</text>
+  <text x="515" y="350" class="box-copy">Celulas regionales, sedes</text>
+  <text x="515" y="380" class="box-copy">y coordenadas.</text>
+
+  <rect x="850" y="260" width="290" height="150" class="box" fill="#fff7e7" stroke="#e5b663"/>
+  <circle cx="885" cy="295" r="24" fill="#d28f23"/>
+  <text x="879" y="302" class="step">3</text>
+  <text x="925" y="303" class="box-title">Docentes</text>
+  <text x="880" y="350" class="box-copy">Vinculacion, capacidad</text>
+  <text x="880" y="380" class="box-copy">y disponibilidad.</text>
+
+  <rect x="1215" y="260" width="290" height="150" class="box" fill="#f1edfb" stroke="#9a87d6"/>
+  <circle cx="1250" cy="295" r="24" fill="#7958c8"/>
+  <text x="1244" y="302" class="step">4</text>
+  <text x="1290" y="303" class="box-title">Academico</text>
+  <text x="1245" y="350" class="box-copy">Periodo activo, materias</text>
+  <text x="1245" y="380" class="box-copy">y plantillas.</text>
+
+  <rect x="1215" y="520" width="290" height="150" class="box" fill="#eaf3fb" stroke="#6f9fcb"/>
+  <circle cx="1250" cy="555" r="24" fill="#3f73aa"/>
+  <text x="1244" y="562" class="step">5</text>
+  <text x="1290" y="563" class="box-title">Generar clases</text>
+  <text x="1245" y="610" class="box-copy">Oferta por sede, semestre,</text>
+  <text x="1245" y="640" class="box-copy">grupo y franja horaria.</text>
+
+  <rect x="850" y="520" width="290" height="150" class="box" fill="#fff0ee" stroke="#dd897d"/>
+  <circle cx="885" cy="555" r="24" fill="#c65345"/>
+  <text x="879" y="562" class="step">6</text>
+  <text x="925" y="563" class="box-title">Asignar</text>
+  <text x="880" y="610" class="box-copy">Manual, automatica</text>
+  <text x="880" y="640" class="box-copy">o masiva.</text>
+
+  <rect x="485" y="520" width="290" height="150" class="box" fill="#eef7e8" stroke="#8dbd74"/>
+  <circle cx="520" cy="555" r="24" fill="#6da040"/>
+  <text x="514" y="562" class="step">7</text>
+  <text x="560" y="563" class="box-title">Revisar</text>
+  <text x="515" y="610" class="box-copy">Dashboard, horario por sede</text>
+  <text x="515" y="640" class="box-copy">y mapa.</text>
+
+  <rect x="120" y="520" width="290" height="150" class="box" fill="#f1edfb" stroke="#9a87d6"/>
+  <circle cx="155" cy="555" r="24" fill="#7958c8"/>
+  <text x="149" y="562" class="step">8</text>
+  <text x="195" y="563" class="box-title">Exportar</text>
+  <text x="150" y="610" class="box-copy">Reportes PDF / Excel</text>
+  <text x="150" y="640" class="box-copy">para revision final.</text>
+
+  <path d="M410 335 H485" class="arrow"/>
+  <path d="M775 335 H850" class="arrow"/>
+  <path d="M1140 335 H1215" class="arrow"/>
+  <path d="M1360 410 V520" class="arrow"/>
+  <path d="M1215 595 H1140" class="arrow"/>
+  <path d="M850 595 H775" class="arrow"/>
+  <path d="M485 595 H410" class="arrow"/>
+
+  <rect x="240" y="774" width="1320" height="102" rx="22" fill="#f8fafc" stroke="#d4dce7" stroke-width="2"/>
+  <text x="290" y="820" class="box-title">Regla operativa</text>
+  <text x="540" y="820" class="box-copy">Las clases nacen pendientes; la asignacion conecta cada clase con un docente valido.</text>
+  <text x="540" y="853" class="box-copy">La revision visual confirma cobertura, capacidad y distribucion territorial.</text>
+</svg>

@@ -147,12 +147,20 @@ export interface ClaseAcademica {
   created_at: string;
 }
 
+export interface ClaseTemplateDiaConfig {
+  dia_semana: 'L' | 'M' | 'X' | 'J' | 'V' | 'S';
+  jornadas: { hora_inicio: string; hora_fin: string }[];
+  max_clases: number | null;
+  break_minutos: number;
+}
+
 export interface ClaseTemplate {
   id: string;
   nombre: string;
   programa_id: string | null;
   dias_semana: ('L' | 'M' | 'X' | 'J' | 'V' | 'S')[];
   jornadas: { hora_inicio: string; hora_fin: string }[];
+  dias_config: ClaseTemplateDiaConfig[];
   semestres: { semestre: number; grupos: number }[];
   created_at: string;
 }
