@@ -1,15 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Stack, Title, Button, Group, Paper, Text, Badge, ActionIcon,
   Modal, TextInput, Select, Tooltip, Accordion, ThemeIcon, Tabs, Table, Alert
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
-import { Plus, Trash2, MapPin, BookOpen, Pencil, Building2 } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import { Plus, Trash2, MapPin, BookOpen, Pencil, Building2, Search } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import {
-  useCelulas, useCreateCelula, useSedes, useCreateSede, useUpdateSede, useDeleteSede,
+  useCelulas, useCreateCelula, useUpdateCelula, useSedes, useCreateSede, useUpdateSede, useDeleteSede,
   useSedesProgramas,
 } from '../api/hooks';
 import type { Celula, Sede, Programa } from '../types';
@@ -31,6 +31,43 @@ function MapClickHandler({ onMapClick }: { onMapClick: (lat: number, lng: number
 }
 
 const CENTRO_MAPA: [number, number] = [8.749, -75.874];
+
+type GeocodeResult = {
+  place_id: number;
+  display_name: string;
+  lat: string;
+  lon: string;
+};
+
+function MapRecenter({ position, zoom }: { position: [number, number] | null; zoom: number }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (position) {
+      map.setView(position, zoom);
+    }
+  }, [map, position, zoom]);
+
+  return null;
+}
+
+async function searchAddress(query: string): Promise<GeocodeResult[]> {
+  const params = new URLSearchParams({
+    q: query,
+    format: 'jsonv2',
+    limit: '6',
+    addressdetails: '1',
+    countrycodes: 'co',
+    'accept-language': 'es',
+  });
+
+  const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error('No se pudo buscar la dirección');
+  }
+
+  return response.json();
+}
 
 function ProgramasSede({ sede }: { sede: Sede }) {
   const { data: programasSede = [], isLoading } = useSedesProgramas(sede.id);
@@ -137,22 +174,28 @@ export function Celulas() {
   const { data: celulas = [], isLoading } = useCelulas();
   const { data: sedes = [] } = useSedes();
   const createCelula = useCreateCelula();
+  const updateCelula = useUpdateCelula();
   const createSede = useCreateSede();
   const updateSede = useUpdateSede();
   const deleteSede = useDeleteSede();
   const qc = useQueryClient();
 
   const [celulaOpened, { open: openCelula, close: closeCelula }] = useDisclosure(false);
+  const [editCelulaOpened, { open: openEditCelula, close: closeEditCelula }] = useDisclosure(false);
   const [sedeOpened, { open: openSede, close: closeSede }] = useDisclosure(false);
   const [editOpened, { open: openEdit, close: closeEdit }] = useDisclosure(false);
 
   const [celulaForm, setCelulaForm] = useState({ nombre: '', municipio: '' });
+  const [editingCelula, setEditingCelula] = useState<Celula | null>(null);
+  const [editCelulaForm, setEditCelulaForm] = useState({ nombre: '', municipio: '' });
   const [targetCelulaId, setTargetCelulaId] = useState<string | null>(null);
 
   const [sedeForm, setSedeForm] = useState({
     nombre: '', tipo: 'municipal', celula_id: '', latitud: '', longitud: '', direccion: '',
   });
   const [pinPos, setPinPos] = useState<[number, number] | null>(null);
+  const [addressResults, setAddressResults] = useState<GeocodeResult[]>([]);
+  const [addressLoading, setAddressLoading] = useState(false);
 
   const [editingSede, setEditingSede] = useState<Sede | null>(null);
   const [editForm, setEditForm] = useState({
@@ -190,11 +233,72 @@ export function Celulas() {
     }
   };
 
+  const handleOpenEditCelula = (c: Celula) => {
+    setEditingCelula(c);
+    setEditCelulaForm({ nombre: c.nombre, municipio: c.municipio });
+    openEditCelula();
+  };
+
+  const handleUpdateCelula = async () => {
+    if (!editingCelula || !editCelulaForm.nombre || !editCelulaForm.municipio) {
+      notifications.show({ message: 'Nombre y municipio son requeridos', color: 'red' });
+      return;
+    }
+    try {
+      await updateCelula.mutateAsync({
+        id: editingCelula.id,
+        nombre: editCelulaForm.nombre,
+        municipio: editCelulaForm.municipio,
+      });
+      notifications.show({ message: 'Célula actualizada', color: 'green' });
+      closeEditCelula();
+      setEditingCelula(null);
+    } catch (e: any) {
+      notifications.show({ message: e.response?.data?.error || 'Error al actualizar célula', color: 'red' });
+    }
+  };
+
   const handleOpenAddSede = (celulaId: string | null) => {
     setTargetCelulaId(celulaId);
     setSedeForm({ nombre: '', tipo: celulaId ? 'celula' : 'central', celula_id: celulaId ?? '', latitud: '', longitud: '', direccion: '' });
     setPinPos(null);
+    setAddressResults([]);
     openSede();
+  };
+
+  const applyAddressResult = (result: GeocodeResult) => {
+    const lat = parseFloat(result.lat);
+    const lng = parseFloat(result.lon);
+    setPinPos([lat, lng]);
+    setSedeForm(f => ({
+      ...f,
+      direccion: result.display_name,
+      latitud: lat.toFixed(6),
+      longitud: lng.toFixed(6),
+    }));
+  };
+
+  const handleAddressSearch = async () => {
+    const query = sedeForm.direccion.trim();
+    if (query.length < 3) {
+      notifications.show({ message: 'Escribe al menos 3 caracteres para buscar una dirección', color: 'yellow' });
+      return;
+    }
+
+    setAddressLoading(true);
+    try {
+      const results = await searchAddress(query);
+      setAddressResults(results);
+      if (results.length === 0) {
+        notifications.show({ message: 'No encontramos direcciones para esa búsqueda', color: 'yellow' });
+        return;
+      }
+      applyAddressResult(results[0]);
+    } catch {
+      notifications.show({ message: 'No se pudo buscar la dirección', color: 'red' });
+    } finally {
+      setAddressLoading(false);
+    }
   };
 
   const handleCreateSede = async () => {
@@ -342,6 +446,11 @@ export function Celulas() {
                     <Tabs.Panel value="sedes">
                       <Stack gap="sm">
                         <Group justify="flex-end">
+                          <Tooltip label="Editar célula">
+                            <ActionIcon variant="light" color="brand" onClick={() => handleOpenEditCelula(c)}>
+                              <Pencil size={16} />
+                            </ActionIcon>
+                          </Tooltip>
                           <Button size="xs" variant="light" leftSection={<Plus size={13} />}
                             onClick={() => handleOpenAddSede(c.id)}>
                             Añadir sede
@@ -395,6 +504,24 @@ export function Celulas() {
         </Stack>
       </Modal>
 
+      {/* ── Modal Editar Célula ── */}
+      <Modal opened={editCelulaOpened} onClose={closeEditCelula} title={`Editar célula: ${editingCelula?.nombre ?? ''}`}>
+        <Stack gap="sm">
+          <TextInput label="Nombre" placeholder="Ej: Célula Norte"
+            value={editCelulaForm.nombre}
+            onChange={e => setEditCelulaForm(f => ({ ...f, nombre: e.target.value }))} required />
+          <TextInput label="Municipio central" placeholder="Ej: Tunja"
+            value={editCelulaForm.municipio}
+            onChange={e => setEditCelulaForm(f => ({ ...f, municipio: e.target.value }))} required />
+          <Group justify="flex-end" mt="sm">
+            <Button variant="light" onClick={closeEditCelula}>Cancelar</Button>
+            <Button onClick={handleUpdateCelula} loading={updateCelula.isPending} color="brand">
+              Guardar cambios
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
       {/* ── Modal Nueva Sede ── */}
       <Modal opened={sedeOpened} onClose={closeSede}
         title={targetCelulaId
@@ -426,6 +553,7 @@ export function Celulas() {
           <Paper withBorder radius="md" style={{ overflow: 'hidden' }}>
             <MapContainer center={CENTRO_MAPA} zoom={9} style={{ height: 260, width: '100%', cursor: 'crosshair' }}>
               <TileLayer attribution='&copy; OpenStreetMap' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+              <MapRecenter position={pinPos} zoom={15} />
               <MapClickHandler onMapClick={(lat, lng) => {
                 setPinPos([lat, lng]);
                 setSedeForm(f => ({ ...f, latitud: lat.toFixed(6), longitud: lng.toFixed(6) }));
@@ -439,8 +567,48 @@ export function Celulas() {
             <TextInput label="Longitud" placeholder="Clic en el mapa" value={sedeForm.longitud}
               onChange={e => { setSedeForm(f => ({ ...f, longitud: e.target.value })); const lat = parseFloat(sedeForm.latitud), lng = parseFloat(e.target.value); if (!isNaN(lat) && !isNaN(lng)) setPinPos([lat, lng]); }} />
           </Group>
-          <TextInput label="Dirección (opcional)" value={sedeForm.direccion}
-            onChange={e => setSedeForm(f => ({ ...f, direccion: e.target.value }))} />
+          <Group align="flex-end">
+            <TextInput
+              label="Buscar dirección"
+              placeholder="Ej: Calle 1 # 1-1, Tunja"
+              value={sedeForm.direccion}
+              onChange={e => {
+                setSedeForm(f => ({ ...f, direccion: e.target.value }));
+                setAddressResults([]);
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleAddressSearch();
+                }
+              }}
+              style={{ flex: 1 }}
+            />
+            <Button
+              leftSection={<Search size={16} />}
+              onClick={handleAddressSearch}
+              loading={addressLoading}
+              variant="light"
+            >
+              Buscar
+            </Button>
+          </Group>
+
+          {addressResults.length > 1 && (
+            <Select
+              label="Resultados de la búsqueda"
+              placeholder="Selecciona una coincidencia"
+              data={addressResults.map(result => ({
+                value: String(result.place_id),
+                label: result.display_name,
+              }))}
+              onChange={value => {
+                const result = addressResults.find(item => String(item.place_id) === value);
+                if (result) applyAddressResult(result);
+              }}
+              searchable
+            />
+          )}
           <Group justify="flex-end" mt="sm">
             <Button variant="light" onClick={closeSede}>Cancelar</Button>
             <Button onClick={handleCreateSede} loading={createSede.isPending}

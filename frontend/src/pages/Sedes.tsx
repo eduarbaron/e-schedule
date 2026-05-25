@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Stack, Title, Button, Group, Paper, Text, Badge, ActionIcon,
   Modal, TextInput, Select, Table, Tooltip, Alert, Drawer
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
-import { Plus, Trash2, MapPin, BookOpen, Pencil } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import { Plus, Trash2, MapPin, BookOpen, Pencil, Search } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import {
   useSedes, useCelulas, useCreateSede, useUpdateSede, useDeleteSede,
@@ -37,6 +37,52 @@ function MapClickHandler({ onMapClick }: { onMapClick: (lat: number, lng: number
 }
 
 const CENTRO_MAPA: [number, number] = [8.749, -75.874];
+
+type SedeForm = {
+  nombre: string;
+  tipo: string;
+  celula_id: string;
+  latitud: string;
+  longitud: string;
+  direccion: string;
+};
+
+type GeocodeResult = {
+  place_id: number;
+  display_name: string;
+  lat: string;
+  lon: string;
+};
+
+function MapRecenter({ position, zoom }: { position: [number, number] | null; zoom: number }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (position) {
+      map.setView(position, zoom);
+    }
+  }, [map, position, zoom]);
+
+  return null;
+}
+
+async function searchAddress(query: string): Promise<GeocodeResult[]> {
+  const params = new URLSearchParams({
+    q: query,
+    format: 'jsonv2',
+    limit: '6',
+    addressdetails: '1',
+    countrycodes: 'co',
+    'accept-language': 'es',
+  });
+
+  const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error('No se pudo buscar la dirección');
+  }
+
+  return response.json();
+}
 
 function ProgramasSede({ sede }: { sede: Sede }) {
   const { data: programasSede = [], isLoading } = useSedesProgramas(sede.id);
@@ -93,14 +139,18 @@ export function Sedes() {
   const [drawerOpened, { open: openDrawer, close: closeDrawer }] = useDisclosure(false);
   const [sedeSeleccionada, setSedeSeleccionada] = useState<Sede | null>(null);
   const [sedeEditando, setSedeEditando] = useState<Sede | null>(null);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<SedeForm>({
     nombre: '', tipo: 'municipal', celula_id: '', latitud: '', longitud: '', direccion: '',
   });
   const [pinPos, setPinPos] = useState<[number, number] | null>(null);
-  const [editForm, setEditForm] = useState({
+  const [addressResults, setAddressResults] = useState<GeocodeResult[]>([]);
+  const [addressLoading, setAddressLoading] = useState(false);
+  const [editForm, setEditForm] = useState<SedeForm>({
     nombre: '', tipo: 'municipal', celula_id: '', latitud: '', longitud: '', direccion: '',
   });
   const [editPinPos, setEditPinPos] = useState<[number, number] | null>(null);
+  const [editAddressResults, setEditAddressResults] = useState<GeocodeResult[]>([]);
+  const [editAddressLoading, setEditAddressLoading] = useState(false);
 
   const handleMapClick = (lat: number, lng: number) => {
     setPinPos([lat, lng]);
@@ -114,7 +164,43 @@ export function Sedes() {
   const handleOpen = () => {
     setForm({ nombre: '', tipo: 'municipal', celula_id: '', latitud: '', longitud: '', direccion: '' });
     setPinPos(null);
+    setAddressResults([]);
     open();
+  };
+
+  const applyAddressResult = (result: GeocodeResult) => {
+    const lat = parseFloat(result.lat);
+    const lng = parseFloat(result.lon);
+    setPinPos([lat, lng]);
+    setForm(f => ({
+      ...f,
+      direccion: result.display_name,
+      latitud: lat.toFixed(6),
+      longitud: lng.toFixed(6),
+    }));
+  };
+
+  const handleAddressSearch = async () => {
+    const query = form.direccion.trim();
+    if (query.length < 3) {
+      notifications.show({ message: 'Escribe al menos 3 caracteres para buscar una dirección', color: 'yellow' });
+      return;
+    }
+
+    setAddressLoading(true);
+    try {
+      const results = await searchAddress(query);
+      setAddressResults(results);
+      if (results.length === 0) {
+        notifications.show({ message: 'No encontramos direcciones para esa búsqueda', color: 'yellow' });
+        return;
+      }
+      applyAddressResult(results[0]);
+    } catch {
+      notifications.show({ message: 'No se pudo buscar la dirección', color: 'red' });
+    } finally {
+      setAddressLoading(false);
+    }
   };
 
   const handleCreate = async () => {
@@ -149,7 +235,43 @@ export function Sedes() {
       direccion: sede.direccion ?? '',
     });
     setEditPinPos([sede.latitud, sede.longitud]);
+    setEditAddressResults([]);
     openEdit();
+  };
+
+  const applyEditAddressResult = (result: GeocodeResult) => {
+    const lat = parseFloat(result.lat);
+    const lng = parseFloat(result.lon);
+    setEditPinPos([lat, lng]);
+    setEditForm(f => ({
+      ...f,
+      direccion: result.display_name,
+      latitud: lat.toFixed(6),
+      longitud: lng.toFixed(6),
+    }));
+  };
+
+  const handleEditAddressSearch = async () => {
+    const query = editForm.direccion.trim();
+    if (query.length < 3) {
+      notifications.show({ message: 'Escribe al menos 3 caracteres para buscar una dirección', color: 'yellow' });
+      return;
+    }
+
+    setEditAddressLoading(true);
+    try {
+      const results = await searchAddress(query);
+      setEditAddressResults(results);
+      if (results.length === 0) {
+        notifications.show({ message: 'No encontramos direcciones para esa búsqueda', color: 'yellow' });
+        return;
+      }
+      applyEditAddressResult(results[0]);
+    } catch {
+      notifications.show({ message: 'No se pudo buscar la dirección', color: 'red' });
+    } finally {
+      setEditAddressLoading(false);
+    }
   };
 
   const handleUpdate = async () => {
@@ -298,6 +420,7 @@ export function Sedes() {
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               />
+              <MapRecenter position={editPinPos} zoom={15} />
               <MapClickHandler onMapClick={(lat, lng) => {
                 setEditPinPos([lat, lng]);
                 setEditForm(f => ({ ...f, latitud: lat.toFixed(6), longitud: lng.toFixed(6) }));
@@ -321,8 +444,48 @@ export function Sedes() {
               }} />
           </Group>
 
-          <TextInput label="Dirección (opcional)" value={editForm.direccion}
-            onChange={e => setEditForm(f => ({ ...f, direccion: e.target.value }))} />
+          <Group align="flex-end">
+            <TextInput
+              label="Buscar dirección"
+              placeholder="Ej: Calle 1 # 1-1, Tunja"
+              value={editForm.direccion}
+              onChange={e => {
+                setEditForm(f => ({ ...f, direccion: e.target.value }));
+                setEditAddressResults([]);
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleEditAddressSearch();
+                }
+              }}
+              style={{ flex: 1 }}
+            />
+            <Button
+              leftSection={<Search size={16} />}
+              onClick={handleEditAddressSearch}
+              loading={editAddressLoading}
+              variant="light"
+            >
+              Buscar
+            </Button>
+          </Group>
+
+          {editAddressResults.length > 1 && (
+            <Select
+              label="Resultados de la búsqueda"
+              placeholder="Selecciona una coincidencia"
+              data={editAddressResults.map(result => ({
+                value: String(result.place_id),
+                label: result.display_name,
+              }))}
+              onChange={value => {
+                const result = editAddressResults.find(item => String(item.place_id) === value);
+                if (result) applyEditAddressResult(result);
+              }}
+              searchable
+            />
+          )}
 
           <Group justify="flex-end" mt="sm">
             <Button variant="light" onClick={closeEdit}>Cancelar</Button>
@@ -367,6 +530,7 @@ export function Sedes() {
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               />
+              <MapRecenter position={pinPos} zoom={15} />
               <MapClickHandler onMapClick={handleMapClick} />
               {pinPos && <Marker position={pinPos} icon={PIN_ICON} />}
             </MapContainer>
@@ -397,8 +561,48 @@ export function Sedes() {
             />
           </Group>
 
-          <TextInput label="Dirección (opcional)" placeholder="Calle 1 # 1-1" value={form.direccion}
-            onChange={e => setForm(f => ({ ...f, direccion: e.target.value }))} />
+          <Group align="flex-end">
+            <TextInput
+              label="Buscar dirección"
+              placeholder="Ej: Calle 1 # 1-1, Tunja"
+              value={form.direccion}
+              onChange={e => {
+                setForm(f => ({ ...f, direccion: e.target.value }));
+                setAddressResults([]);
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleAddressSearch();
+                }
+              }}
+              style={{ flex: 1 }}
+            />
+            <Button
+              leftSection={<Search size={16} />}
+              onClick={handleAddressSearch}
+              loading={addressLoading}
+              variant="light"
+            >
+              Buscar
+            </Button>
+          </Group>
+
+          {addressResults.length > 1 && (
+            <Select
+              label="Resultados de la búsqueda"
+              placeholder="Selecciona una coincidencia"
+              data={addressResults.map(result => ({
+                value: String(result.place_id),
+                label: result.display_name,
+              }))}
+              onChange={value => {
+                const result = addressResults.find(item => String(item.place_id) === value);
+                if (result) applyAddressResult(result);
+              }}
+              searchable
+            />
+          )}
 
           <Group justify="flex-end" mt="sm">
             <Button variant="light" onClick={close}>Cancelar</Button>

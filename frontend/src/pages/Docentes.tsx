@@ -11,6 +11,11 @@ import type { Docente, Facultad, Departamento } from '../types';
 import { DocenteDetalle } from '../components/DocenteDetalle';
 import { useConfirm } from '../components/ConfirmProvider';
 
+const defaultDocenteForm = () => ({
+  nombre: '', email: '', tipo_vinculacion: 'celula', celula_id: '',
+  max_horas: 19, departamento_id: '', facultad_id_filtro: '',
+});
+
 export function Docentes() {
   const confirm = useConfirm();
   const { data: docentes = [], isLoading } = useDocentes();
@@ -24,10 +29,12 @@ export function Docentes() {
   const [createOpened, { open: openCreate, close: closeCreate }] = useDisclosure(false);
   const [detalleId, setDetalleId] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<'todos' | 'disponibles' | 'completos'>('todos');
-  const [form, setForm] = useState({
-    nombre: '', email: '', tipo_vinculacion: 'celula', celula_id: '',
-    max_horas: 19, departamento_id: '', facultad_id_filtro: '',
-  });
+  const [form, setForm] = useState(defaultDocenteForm);
+
+  const closeCreateModal = () => {
+    closeCreate();
+    setForm(defaultDocenteForm());
+  };
 
   const handleCreate = async () => {
     if (!form.nombre || !form.email) {
@@ -44,8 +51,7 @@ export function Docentes() {
         departamento_id: form.departamento_id || null,
       });
       notifications.show({ message: 'Docente creado exitosamente', color: 'green' });
-      closeCreate();
-      setForm({ nombre: '', email: '', tipo_vinculacion: 'celula', celula_id: '', max_horas: 19, departamento_id: '', facultad_id_filtro: '' });
+      closeCreateModal();
     } catch (e: any) {
       notifications.show({ message: e.response?.data?.error || 'Error al crear docente', color: 'red' });
     }
@@ -279,7 +285,7 @@ export function Docentes() {
         </Paper>
       )}
 
-      <Modal opened={createOpened} onClose={closeCreate} title="Nuevo docente" size="md">
+      <Modal opened={createOpened} onClose={closeCreateModal} title="Nuevo docente" size="md">
         <Stack gap="sm">
           <TextInput
             label="Nombre completo"
@@ -344,7 +350,7 @@ export function Docentes() {
             max={40}
           />
           <Group justify="flex-end" mt="sm">
-            <Button variant="light" onClick={closeCreate}>Cancelar</Button>
+            <Button variant="light" onClick={closeCreateModal}>Cancelar</Button>
             <Button onClick={handleCreate} loading={createDocente.isPending}>Crear docente</Button>
           </Group>
         </Stack>

@@ -352,6 +352,15 @@ export const useCreateCelula = () => {
   });
 };
 
+export const useUpdateCelula = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string; [key: string]: any }) =>
+      api.put(`/celulas/${id}`, data).then(r => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['celulas'] }),
+  });
+};
+
 export const useCreateMateria = () => {
   const qc = useQueryClient();
   return useMutation({

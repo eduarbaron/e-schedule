@@ -12,6 +12,14 @@ import { usePeriodos, useCreatePeriodo, useActivarPeriodo, useDeletePeriodo, use
 import type { Periodo } from '../types';
 import { useConfirm } from '../components/ConfirmProvider';
 
+const defaultPeriodoForm = () => ({
+  id: '',
+  nombre: '',
+  fecha_inicio: '',
+  calendario_inicio: 'A' as 'A' | 'B',
+  activo: false,
+});
+
 export function Periodos() {
   const confirm = useConfirm();
   const { data: periodos = [], isLoading } = usePeriodos();
@@ -23,18 +31,17 @@ export function Periodos() {
   const [opened, { open, close }] = useDisclosure(false);
   const [editOpened, { open: openEdit, close: closeEdit }] = useDisclosure(false);
   const [editingPeriodo, setEditingPeriodo] = useState<Periodo | null>(null);
-  const [form, setForm] = useState({
-    id: '',
-    nombre: '',
-    fecha_inicio: '',
-    calendario_inicio: 'A' as 'A' | 'B',
-    activo: false,
-  });
+  const [form, setForm] = useState(defaultPeriodoForm);
   const [editForm, setEditForm] = useState({
     nombre: '',
     fecha_inicio: '',
     calendario_inicio: 'A' as 'A' | 'B',
   });
+
+  const closeCreateModal = () => {
+    close();
+    setForm(defaultPeriodoForm());
+  };
 
   const validatePeriodoDate = (fecha: string) => {
     const fechaInicio = dayjs(fecha);
@@ -58,8 +65,7 @@ export function Periodos() {
     try {
       await createPeriodo.mutateAsync(form);
       notifications.show({ message: 'Período creado exitosamente', color: 'green' });
-      close();
-      setForm({ id: '', nombre: '', fecha_inicio: '', calendario_inicio: 'A', activo: false });
+      closeCreateModal();
     } catch (e: any) {
       notifications.show({ message: e.response?.data?.error || 'Error al crear período', color: 'red' });
     }
@@ -226,7 +232,7 @@ export function Periodos() {
         </Paper>
       )}
 
-      <Modal opened={opened} onClose={close} title="Nuevo período académico" size="md">
+      <Modal opened={opened} onClose={closeCreateModal} title="Nuevo período académico" size="md">
         <Stack gap="sm">
           <TextInput
             label="ID del período"
@@ -276,7 +282,7 @@ export function Periodos() {
             color="green"
           />
           <Group justify="flex-end" mt="sm">
-            <Button variant="light" onClick={close}>Cancelar</Button>
+            <Button variant="light" onClick={closeCreateModal}>Cancelar</Button>
             <Button onClick={handleCreate} loading={createPeriodo.isPending}>Crear período</Button>
           </Group>
         </Stack>

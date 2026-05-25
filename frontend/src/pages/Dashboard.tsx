@@ -1,4 +1,4 @@
-import { Grid, Paper, Text, Group, RingProgress, Badge, Stack, Title, Skeleton, ThemeIcon, Progress, Divider } from '@mantine/core';
+import { Grid, Paper, Text, Group, RingProgress, Badge, Stack, Title, Skeleton, ThemeIcon, Progress, Divider, Table } from '@mantine/core';
 import { Users, Building2, MapPin, CalendarDays, AlertTriangle, CheckCircle, Gauge, Clock3 } from 'lucide-react';
 import { useDocentes, useSedes, useCelulas, useAsignaciones, useClases } from '../api/hooks';
 import { usePeriodoTrabajo } from '../context/PeriodoContext';
@@ -52,7 +52,7 @@ export function Dashboard() {
   const totalHorasAsignadas = docentes.reduce((acc: number, d: Docente) => acc + d.horas_asignadas, 0);
   const totalHorasMax = docentes.reduce((acc: number, d: Docente) => acc + d.max_horas, 0);
   const porcentajeOcupacion = totalHorasMax > 0 ? Math.round((totalHorasAsignadas / totalHorasMax) * 100) : 0;
-  const clasesActivas = clases.filter((clase: ClaseAcademica) => clase.estado !== 'cancelada');
+  const clasesActivas = (clases as ClaseAcademica[]).filter((clase: ClaseAcademica) => clase.estado !== 'cancelada');
   const asignacionesKeys = new Set((asignaciones as any[]).map(a =>
     `${a.periodo}|${a.sede_id}|${a.materia_id}|${a.grupo ?? 1}|${a.calendario}`
   ));
@@ -63,14 +63,60 @@ export function Dashboard() {
     (acc: number, clase: ClaseAcademica) => acc + horasBloque(clase.hora_inicio, clase.hora_fin),
     0
   );
-  const horasSinCubrir = Math.max(0, totalHorasDemanda - totalHorasAsignadas);
+  const totalHorasCubiertasDemanda = clasesAsignadas.reduce(
+    (acc: number, clase: ClaseAcademica) => acc + horasBloque(clase.hora_inicio, clase.hora_fin),
+    0
+  );
+  const horasSinCubrir = Math.max(0, totalHorasDemanda - totalHorasCubiertasDemanda);
   const capacidadDisponible = Math.max(0, totalHorasMax - totalHorasAsignadas);
   const balanceCapacidad = totalHorasMax - totalHorasDemanda;
-  const coberturaDemanda = totalHorasDemanda > 0 ? Math.min(100, Math.round((totalHorasAsignadas / totalHorasDemanda) * 100)) : 0;
+  const coberturaDemanda = totalHorasDemanda > 0 ? Math.min(100, Math.round((totalHorasCubiertasDemanda / totalHorasDemanda) * 100)) : 0;
   const presionCapacidad = totalHorasMax > 0 ? Math.round((totalHorasDemanda / totalHorasMax) * 100) : 0;
   const coberturaClases = clasesActivas.length > 0 ? Math.round((clasesAsignadas.length / clasesActivas.length) * 100) : 0;
   const docentesEquivalentes = totalHorasDemanda > 0 ? Math.ceil(totalHorasDemanda / 19) : 0;
-  const loadingCapacidad = dLoading || clasesLoading;
+  const loadingCapacidad = dLoading || clasesLoading || aLoading;
+  type ProyeccionProgramaBase = {
+    programaId: string;
+    programaNombre: string;
+    clases: number;
+    clasesAsignadas: number;
+    horas: number;
+    horasAsignadas: number;
+  };
+
+  const proyeccionDocentesPrograma = [...clasesActivas.reduce<Map<string, ProyeccionProgramaBase>>((acc, clase: ClaseAcademica) => {
+    const programaId = clase.programa_id;
+    const current = acc.get(programaId) ?? {
+      programaId,
+      programaNombre: clase.programa_nombre ?? 'Sin programa',
+      clases: 0,
+      clasesAsignadas: 0,
+      horas: 0,
+      horasAsignadas: 0,
+    };
+    const horas = horasBloque(clase.hora_inicio, clase.hora_fin);
+    const key = `${clase.periodo}|${clase.sede_id}|${clase.materia_id}|${clase.grupo ?? 1}|${clase.calendario}`;
+    const asignada = asignacionesKeys.has(key);
+    current.clases += 1;
+    current.horas += horas;
+    if (asignada) {
+      current.clasesAsignadas += 1;
+      current.horasAsignadas += horas;
+    }
+    acc.set(programaId, current);
+    return acc;
+  }, new Map<string, ProyeccionProgramaBase>()).values()]
+    .map(item => {
+      const horasPendientes = Math.max(0, item.horas - item.horasAsignadas);
+      return {
+        ...item,
+        horasPendientes,
+        docentesPlanificados: Math.ceil(item.horas / 19),
+        docentesPendientes: horasPendientes > 0 ? Math.ceil(horasPendientes / 19) : 0,
+        cobertura: item.horas > 0 ? Math.round((item.horasAsignadas / item.horas) * 100) : 0,
+      };
+    })
+    .sort((a, b) => b.horasPendientes - a.horasPendientes || b.horas - a.horas);
 
   const asignacionesLibre = asignaciones.filter((a: any) => a.modo === 'libre');
   const asignacionesForaneas = asignaciones.filter((a: any) => a.modo === 'foraneo');
@@ -180,6 +226,86 @@ export function Dashboard() {
               </Grid.Col>
             </Grid>
           </Stack>
+        )}
+      </Paper>
+
+      <Paper p="lg" radius="md" withBorder>
+        <Group justify="space-between" align="flex-start" mb="md">
+          <div>
+            <Text fw={700}>Proyección de docentes por programa</Text>
+            <Text size="sm" c="dimmed" mt={4}>
+              La necesidad planificada sale de las clases creadas; la necesidad pendiente descuenta las clases ya asignadas.
+            </Text>
+          </div>
+          <Badge color={horasSinCubrir > 0 ? 'orange' : 'green'} variant="light" size="lg">
+            {horasSinCubrir > 0
+              ? `${Math.ceil(horasSinCubrir / 19)} docente(s) equivalentes pendientes`
+              : 'Demanda cubierta'}
+          </Badge>
+        </Group>
+
+        {loadingCapacidad ? (
+          <Stack gap="sm">
+            <Skeleton h={22} />
+            <Skeleton h={80} />
+          </Stack>
+        ) : proyeccionDocentesPrograma.length === 0 ? (
+          <Text size="sm" c="dimmed">Aún no hay clases activas para proyectar docentes.</Text>
+        ) : (
+          <Table striped highlightOnHover>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Programa</Table.Th>
+                <Table.Th>Clases</Table.Th>
+                <Table.Th>Horas planificadas</Table.Th>
+                <Table.Th>Docentes requeridos</Table.Th>
+                <Table.Th>Cobertura</Table.Th>
+                <Table.Th>Pendiente</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {proyeccionDocentesPrograma.map(programa => (
+                <Table.Tr key={programa.programaId}>
+                  <Table.Td>
+                    <Text size="sm" fw={600}>{programa.programaNombre}</Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="sm">{programa.clasesAsignadas}/{programa.clases}</Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="sm">{formatHoras(programa.horas)}</Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Badge color="blue" variant="light">
+                      {programa.docentesPlanificados}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td style={{ minWidth: 180 }}>
+                    <Group gap="xs" wrap="nowrap">
+                      <Progress
+                        value={programa.cobertura}
+                        color={programa.cobertura >= 100 ? 'green' : programa.cobertura >= 70 ? 'teal' : 'orange'}
+                        size="sm"
+                        radius="xl"
+                        style={{ flex: 1 }}
+                      />
+                      <Text size="xs" c="dimmed" w={36} ta="right">{programa.cobertura}%</Text>
+                    </Group>
+                  </Table.Td>
+                  <Table.Td>
+                    {programa.horasPendientes > 0 ? (
+                      <Stack gap={2}>
+                        <Text size="sm" fw={600} c="orange.8">{formatHoras(programa.horasPendientes)}</Text>
+                        <Text size="xs" c="dimmed">{programa.docentesPendientes} docente(s) eq.</Text>
+                      </Stack>
+                    ) : (
+                      <Badge color="green" variant="light">Cubierto</Badge>
+                    )}
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
         )}
       </Paper>
 

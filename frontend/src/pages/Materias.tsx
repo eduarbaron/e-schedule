@@ -17,6 +17,10 @@ import {
 import type { Materia, Facultad, Departamento, Programa } from '../types';
 import { useConfirm } from '../components/ConfirmProvider';
 
+const defaultMateriaForm = () => ({
+  nombre: '', horas_semana: 2, programa_id: '', departamento_id: '', facultad_id_filtro: '',
+});
+
 export function Materias() {
   const confirm = useConfirm();
   const { data: materias = [], isLoading } = useMaterias();
@@ -26,9 +30,12 @@ export function Materias() {
   const createMateria = useCreateMateria();
   const deleteMateria = useDeleteMateria();
   const [opened, { open, close }] = useDisclosure(false);
-  const [form, setForm] = useState({
-    nombre: '', horas_semana: 2, programa_id: '', departamento_id: '', facultad_id_filtro: '',
-  });
+  const [form, setForm] = useState(defaultMateriaForm);
+
+  const closeMateriaModal = () => {
+    close();
+    setForm(defaultMateriaForm());
+  };
 
   const handleCreate = async () => {
     if (!form.nombre) {
@@ -43,8 +50,7 @@ export function Materias() {
         departamento_id: form.departamento_id || null,
       });
       notifications.show({ message: 'Materia creada exitosamente', color: 'green' });
-      close();
-      setForm({ nombre: '', horas_semana: 2, programa_id: '', departamento_id: '', facultad_id_filtro: '' });
+      closeMateriaModal();
     } catch (e: any) {
       notifications.show({ message: e.response?.data?.error || 'Error al crear materia', color: 'red' });
     }
@@ -119,7 +125,7 @@ export function Materias() {
         </Paper>
       )}
 
-      <Modal opened={opened} onClose={close} title="Nueva materia" size="md">
+      <Modal opened={opened} onClose={closeMateriaModal} title="Nueva materia" size="md">
         <Stack gap="sm">
           <TextInput
             label="Nombre de la materia"
@@ -167,7 +173,7 @@ export function Materias() {
             max={10}
           />
           <Group justify="flex-end" mt="sm">
-            <Button variant="light" onClick={close}>Cancelar</Button>
+            <Button variant="light" onClick={closeMateriaModal}>Cancelar</Button>
             <Button onClick={handleCreate} loading={createMateria.isPending}>Crear materia</Button>
           </Group>
         </Stack>

@@ -104,6 +104,29 @@ const defaultJornadas = (): JornadaForm[] => [
   { hora_inicio: '14:00', hora_fin: '17:00' },
 ];
 
+const defaultClaseGrupos = (): GrupoForm[] => [
+  { grupo: 1, calendario: 'A', dia_semana: 'L', hora_inicio: '07:00', hora_fin: '09:00' },
+];
+
+const defaultClaseForm = () => ({
+  programa_id: '',
+  semestre: '',
+  materia_id: '',
+  sede_ids: [] as string[],
+  grupos: defaultClaseGrupos(),
+});
+
+const defaultGeneratorForm = () => ({
+  programa_id: '',
+  sede_ids: [] as string[],
+  template_por_sede: {} as Record<string, string>,
+  semestres_por_sede: {} as Record<string, string[]>,
+  grupos_por_semestre: 2,
+  dias_semana: ['S'] as string[],
+  jornadas: defaultJornadas(),
+  reemplazar_existentes: false,
+});
+
 const diasConfigDesdeLegacy = (dias: string[], jornadas: JornadaForm[]): DiaConfigForm[] =>
   dias.map(dia_semana => ({
     dia_semana,
@@ -145,25 +168,8 @@ export function Clases() {
   const [templateOpened, { open: openTemplate, close: closeTemplate }] = useDisclosure(false);
   const [exporting, setExporting] = useState<'proyeccion' | 'asignaciones' | null>(null);
 
-  const [form, setForm] = useState({
-    programa_id: '',
-    semestre: '',
-    materia_id: '',
-    sede_ids: [] as string[],
-    grupos: [
-      { grupo: 1, calendario: 'A' as const, dia_semana: 'L', hora_inicio: '07:00', hora_fin: '09:00' },
-    ] as GrupoForm[],
-  });
-  const [generatorForm, setGeneratorForm] = useState({
-    programa_id: '',
-    sede_ids: [] as string[],
-    template_por_sede: {} as Record<string, string>,
-    semestres_por_sede: {} as Record<string, string[]>,
-    grupos_por_semestre: 2,
-    dias_semana: ['S'] as string[],
-    jornadas: defaultJornadas() as JornadaForm[],
-    reemplazar_existentes: false,
-  });
+  const [form, setForm] = useState(defaultClaseForm);
+  const [generatorForm, setGeneratorForm] = useState(defaultGeneratorForm);
 
   const { data: sedesProgramaGenerador = [] } = useProgramaSedes(generatorForm.programa_id);
   const { data: claseTemplates = [] } = useClaseTemplates(generatorForm.programa_id);
@@ -424,6 +430,16 @@ export function Clases() {
     }));
   };
 
+  const closeClaseModal = () => {
+    close();
+    setForm(defaultClaseForm());
+  };
+
+  const closeGeneratorModal = () => {
+    closeGenerator();
+    setGeneratorForm(defaultGeneratorForm());
+  };
+
   const handleCreate = async () => {
     if (!periodoFinal || !form.programa_id || !form.materia_id || form.sede_ids.length === 0) {
       notifications.show({ message: 'Periodo, programa, materia y al menos una sede son requeridos', color: 'red' });
@@ -450,13 +466,7 @@ export function Clases() {
         )
       );
       notifications.show({ message: `${totalAcrear} clase(s) creada(s)`, color: 'green' });
-      close();
-      setForm(f => ({
-        ...f,
-        materia_id: '',
-        sede_ids: [],
-        grupos: [{ grupo: 1, calendario: 'A', dia_semana: 'L', hora_inicio: '07:00', hora_fin: '09:00' }],
-      }));
+      closeClaseModal();
     } catch (e: any) {
       notifications.show({ message: e.response?.data?.error || 'Error al crear clases', color: 'red' });
     }
@@ -510,7 +520,7 @@ export function Clases() {
         reemplazar_existentes: generatorForm.reemplazar_existentes,
       });
       notifications.show({ message: `${res.clases_creadas} clase(s) generada(s)`, color: 'green' });
-      closeGenerator();
+      closeGeneratorModal();
     } catch (e: any) {
       const detalles = e.response?.data?.detalles?.[0] ? ` ${e.response.data.detalles[0]}` : '';
       notifications.show({ message: `${e.response?.data?.error || 'Error al generar clases'}${detalles}`, color: 'red' });
@@ -844,7 +854,7 @@ export function Clases() {
 
       <Modal
         opened={generatorOpened}
-        onClose={closeGenerator}
+        onClose={closeGeneratorModal}
         title="Generar clases"
         size="xl"
         styles={{
@@ -1040,7 +1050,7 @@ export function Clases() {
           </Paper>
 
           <Group justify="flex-end">
-            <Button variant="light" onClick={closeGenerator}>Cancelar</Button>
+            <Button variant="light" onClick={closeGeneratorModal}>Cancelar</Button>
             <Button color="brand" leftSection={<Wand2 size={16} />} onClick={handleGenerate} loading={generateClases.isPending}>
               Generar clases
             </Button>
@@ -1214,7 +1224,7 @@ export function Clases() {
 
       <Modal
         opened={opened}
-        onClose={close}
+        onClose={closeClaseModal}
         title="Nueva clase"
         size="xl"
         styles={{
@@ -1370,7 +1380,7 @@ export function Clases() {
             </Text>
           </Paper>
           <Group justify="flex-end" mt="sm">
-            <Button variant="light" onClick={close}>Cancelar</Button>
+            <Button variant="light" onClick={closeClaseModal}>Cancelar</Button>
             <Button color="brand" onClick={handleCreate} loading={createClase.isPending}>Crear clases</Button>
           </Group>
         </Stack>

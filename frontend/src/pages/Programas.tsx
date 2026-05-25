@@ -152,15 +152,21 @@ function MateriasPrograma({ programa, materias }: { programa: Programa; materias
   const [opened, { open, close }] = useDisclosure(false);
   const [editOpened, { open: openEdit, close: closeEdit }] = useDisclosure(false);
   const [editingMateria, setEditingMateria] = useState<Materia | null>(null);
-  const [form, setForm] = useState({
+  const defaultMateriaProgramaForm = () => ({
     nombre: '', horas_semana: 2, semestre: 1, departamento_id: '',
   });
+  const [form, setForm] = useState(defaultMateriaProgramaForm);
   const [editForm, setEditForm] = useState({
     nombre: '', horas_semana: 2, semestre: 1, departamento_id: '',
   });
 
   const materiasProg = materias.filter(m => m.programa_id === programa.id);
   const semestres = [...new Set(materiasProg.map(m => m.semestre ?? 0))].sort((a, b) => a - b);
+
+  const closeCreateModal = () => {
+    close();
+    setForm(defaultMateriaProgramaForm());
+  };
 
   const handleCreate = async () => {
     if (!form.nombre) {
@@ -176,8 +182,7 @@ function MateriasPrograma({ programa, materias }: { programa: Programa; materias
         departamento_id: form.departamento_id || null,
       });
       notifications.show({ message: 'Materia creada', color: 'green' });
-      close();
-      setForm({ nombre: '', horas_semana: 2, semestre: 1, departamento_id: '' });
+      closeCreateModal();
     } catch (e: any) {
       notifications.show({ message: e.response?.data?.error || 'Error al crear materia', color: 'red' });
     }
@@ -355,7 +360,7 @@ function MateriasPrograma({ programa, materias }: { programa: Programa; materias
         </Stack>
       </Modal>
 
-      <Modal opened={opened} onClose={close} title={`Nueva materia — ${programa.nombre}`} size="md">
+      <Modal opened={opened} onClose={closeCreateModal} title={`Nueva materia — ${programa.nombre}`} size="md">
         <Stack gap="sm">
           <TextInput
             label="Nombre de la materia"
@@ -388,7 +393,7 @@ function MateriasPrograma({ programa, materias }: { programa: Programa; materias
             onChange={v => setForm(f => ({ ...f, departamento_id: v || '' }))}
           />
           <Group justify="flex-end" mt="sm">
-            <Button variant="light" onClick={close}>Cancelar</Button>
+            <Button variant="light" onClick={closeCreateModal}>Cancelar</Button>
             <Button onClick={handleCreate} loading={createMateria.isPending}>Crear materia</Button>
           </Group>
         </Stack>
@@ -396,6 +401,16 @@ function MateriasPrograma({ programa, materias }: { programa: Programa; materias
     </Stack>
   );
 }
+
+const defaultProgramaForm = () => ({
+  nombre: '',
+  descripcion: '',
+  es_prioritario: false,
+  orden_prioridad: 99,
+  tipo_ciclo: 'quincenal' as 'semanal' | 'quincenal',
+  numero_semestres: 10,
+  sede_ids: [] as string[],
+});
 
 export function Programas() {
   const confirm = useConfirm();
@@ -409,15 +424,7 @@ export function Programas() {
   const [opened, { open, close }] = useDisclosure(false);
   const [editOpened, { open: openEdit, close: closeEdit }] = useDisclosure(false);
   const [editingPrograma, setEditingPrograma] = useState<Programa | null>(null);
-  const [form, setForm] = useState({
-    nombre: '',
-    descripcion: '',
-    es_prioritario: false,
-    orden_prioridad: 99,
-    tipo_ciclo: 'quincenal' as 'semanal' | 'quincenal',
-    numero_semestres: 10,
-    sede_ids: [] as string[],
-  });
+  const [form, setForm] = useState(defaultProgramaForm);
   const [editForm, setEditForm] = useState({
     nombre: '',
     descripcion: '',
@@ -437,6 +444,11 @@ export function Programas() {
 
   const programaPrioritario = (programas as Programa[]).find((p: Programa) => p.es_prioritario === 1);
 
+  const closeCreateModal = () => {
+    close();
+    setForm(defaultProgramaForm());
+  };
+
   const handleCreate = async () => {
     if (!form.nombre) {
       notifications.show({ message: 'El nombre es requerido', color: 'red' });
@@ -445,8 +457,7 @@ export function Programas() {
     try {
       await createPrograma.mutateAsync(form);
       notifications.show({ message: 'Programa creado exitosamente', color: 'green' });
-      close();
-      setForm({ nombre: '', descripcion: '', es_prioritario: false, orden_prioridad: 99, tipo_ciclo: 'quincenal', numero_semestres: 10, sede_ids: [] });
+      closeCreateModal();
     } catch (e: any) {
       notifications.show({ message: e.response?.data?.error || 'Error al crear programa', color: 'red' });
     }
@@ -628,7 +639,7 @@ export function Programas() {
         </Accordion>
       )}
 
-      <Modal opened={opened} onClose={close} title="Nuevo programa académico" size="md">
+      <Modal opened={opened} onClose={closeCreateModal} title="Nuevo programa académico" size="md">
         <Stack gap="sm">
           <TextInput
             label="Nombre del programa"
@@ -688,7 +699,7 @@ export function Programas() {
             color="yellow"
           />
           <Group justify="flex-end" mt="sm">
-            <Button variant="light" onClick={close}>Cancelar</Button>
+            <Button variant="light" onClick={closeCreateModal}>Cancelar</Button>
             <Button onClick={handleCreate} loading={createPrograma.isPending}>Crear programa</Button>
           </Group>
         </Stack>
