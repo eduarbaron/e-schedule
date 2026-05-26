@@ -14,6 +14,7 @@ const HEADERS = [
   'DEPARTAMENTO_MATERIA',
   'ASIGNATURA',
   'CODIGO_MATERIA',
+  'SEMESTRE',
   'GRUPO',
   'DIA',
   'HORA_INICIO',
@@ -22,6 +23,56 @@ const HEADERS = [
   'DOCUMENTO_DOCENTE',
   'DOCENTE',
   'DEPARTAMENTO',
+];
+
+const QUINCENAL_HEADERS = [
+  'UNIDAD_REGIONAL',
+  'DEPARTAMENTO_MATERIA',
+  'ASIGNATURA',
+  'CODIGO_MATERIA',
+  'SEMESTRE',
+  'GRUPO',
+  'SEMANA',
+  'DIA',
+  'HORA_INICIO',
+  'HORA_FINAL',
+  'AULA',
+  'DOCUMENTO_DOCENTE',
+  'DOCENTE',
+  'DEPARTAMENTO',
+];
+
+const BASE_COLUMN_WIDTHS = [
+  { wch: 34 },
+  { wch: 46 },
+  { wch: 38 },
+  { wch: 22 },
+  { wch: 12 },
+  { wch: 10 },
+  { wch: 14 },
+  { wch: 12 },
+  { wch: 12 },
+  { wch: 12 },
+  { wch: 24 },
+  { wch: 36 },
+  { wch: 46 },
+];
+
+const QUINCENAL_COLUMN_WIDTHS = [
+  { wch: 34 },
+  { wch: 46 },
+  { wch: 38 },
+  { wch: 22 },
+  { wch: 12 },
+  { wch: 10 },
+  { wch: 14 },
+  { wch: 14 },
+  { wch: 12 },
+  { wch: 12 },
+  { wch: 12 },
+  { wch: 24 },
+  { wch: 36 },
+  { wch: 46 },
 ];
 
 type ExportMode = 'proyeccion' | 'asignaciones';
@@ -80,6 +131,13 @@ function displayGroup(clase: ClaseAcademica) {
   return clase.grupo;
 }
 
+function displaySemana(clase: ClaseAcademica) {
+  if (clase.calendario === 'A' || clase.calendario === 'B') {
+    return `Semana ${clase.calendario}`;
+  }
+  return '';
+}
+
 export async function exportHorarioProgramaExcel({
   clases,
   asignaciones = [],
@@ -89,6 +147,9 @@ export async function exportHorarioProgramaExcel({
   mode,
 }: ExportInput) {
   const XLSX = await import('xlsx');
+  const isQuincenal = programa.tipo_ciclo === 'quincenal';
+  const headers = isQuincenal ? QUINCENAL_HEADERS : HEADERS;
+  const columnWidths = isQuincenal ? QUINCENAL_COLUMN_WIDTHS : BASE_COLUMN_WIDTHS;
   const materiasById = new Map(materias.map(materia => [materia.id, materia]));
   const asignacionesByKey = new Map(asignaciones.map(asignacion => [assignmentKey(asignacion), asignacion]));
   const rows = clases
@@ -106,12 +167,18 @@ export async function exportHorarioProgramaExcel({
       const asignacion = mode === 'asignaciones' ? asignacionesByKey.get(classAssignmentKey(clase)) : undefined;
       const departamentoMateria = materia?.departamento_nombre ?? '';
       const departamentoPrograma = programa.departamento_nombre ?? '';
-      return {
+      const row = {
         UNIDAD_REGIONAL: clase.sede_nombre ?? clase.sede_id,
         DEPARTAMENTO_MATERIA: departamentoMateria,
         ASIGNATURA: clase.materia_nombre ?? materia?.nombre ?? clase.materia_id,
         CODIGO_MATERIA: materia?.id ?? clase.materia_id,
+        SEMESTRE: clase.semestre ?? materia?.semestre ?? '',
         GRUPO: displayGroup(clase),
+      };
+
+      return {
+        ...row,
+        ...(isQuincenal ? { SEMANA: displaySemana(clase) } : {}),
         DIA: DIA_EXCEL[clase.dia_semana] ?? clase.dia_semana,
         HORA_INICIO: toExcelHour(clase.hora_inicio),
         HORA_FINAL: toExcelHour(clase.hora_fin, true),
@@ -122,22 +189,9 @@ export async function exportHorarioProgramaExcel({
       };
     });
 
-  const worksheet = XLSX.utils.json_to_sheet(rows, { header: HEADERS });
-  worksheet['!cols'] = [
-    { wch: 34 },
-    { wch: 46 },
-    { wch: 38 },
-    { wch: 22 },
-    { wch: 10 },
-    { wch: 14 },
-    { wch: 12 },
-    { wch: 12 },
-    { wch: 12 },
-    { wch: 24 },
-    { wch: 36 },
-    { wch: 46 },
-  ];
-  worksheet['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows.length, c: HEADERS.length - 1 } }) };
+  const worksheet = XLSX.utils.json_to_sheet(rows, { header: headers });
+  worksheet['!cols'] = columnWidths;
+  worksheet['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows.length, c: headers.length - 1 } }) };
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Horarios');
