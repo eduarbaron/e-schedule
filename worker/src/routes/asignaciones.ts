@@ -19,6 +19,12 @@ function classKey(input: {
   return `${input.periodo}|${input.sede_id}|${input.materia_id}|${input.grupo}|${input.calendario}`;
 }
 
+function calendariosCompatibles(a?: CalendarioAsignacion, b?: CalendarioAsignacion) {
+  const calA = a ?? 'semanal';
+  const calB = b ?? 'semanal';
+  return calA === 'semanal' || calB === 'semanal' || calA === calB;
+}
+
 async function eliminarAsignaciones(
   db: D1Database,
   asigs: Asignacion[]
@@ -761,6 +767,49 @@ asignaciones.post('/auto-bulk', async (c) => {
     });
   };
 
+  const puntuarDocenteParaClase = (
+    docente: Docente,
+    materia: MateriaExt,
+    sede: Sede,
+    clase: ClaseAcademica
+  ) => {
+    const asignacionesDocente = asignacionesSimuladas.filter(a => a.docente_id === docente.id);
+    const asignacionesMismoDia = asignacionesDocente.filter(a =>
+      a.sede_id === sede.id &&
+      a.dia_semana === clase.dia_semana &&
+      calendariosCompatibles(a.calendario, clase.calendario)
+    );
+    const materiasMismoDia = asignacionesMismoDia
+      .map(a => materias.find(m => m.id === a.materia_id))
+      .filter(Boolean) as MateriaExt[];
+    const clasesMismoDepartamento = materiasMismoDia.filter(m =>
+      materia.departamento_id &&
+      m.departamento_id === materia.departamento_id
+    ).length;
+    const clasesMismoSemestre = asignacionesDocente.filter(a => {
+      const materiaAsignada = materias.find(m => m.id === a.materia_id);
+      return materia.semestre != null && materiaAsignada?.semestre === materia.semestre;
+    }).length;
+    const horasClase = horasBloque(clase.hora_inicio, clase.hora_fin);
+    const horasDisponibles = docente.max_horas - horasSimuladas[docente.id];
+
+    let score = horasDisponibles;
+    if (docente.departamento_id && materia.departamento_id && docente.departamento_id === materia.departamento_id) {
+      score += 60;
+    }
+    score += asignacionesMismoDia.length * 70;
+    score += clasesMismoDepartamento * 90;
+    if (asignacionesMismoDia.length === 1) score += 80;
+    if (asignacionesMismoDia.length >= 2) score += 40;
+    if (clasesMismoSemestre === 1) {
+      score -= asignacionesMismoDia.length > 0 ? 10 : 25;
+    } else if (clasesMismoSemestre >= 2) {
+      score -= asignacionesMismoDia.length > 0 ? 140 : 220;
+    }
+    if (horasDisponibles < horasClase) score -= 1000;
+    return score;
+  };
+
   if (clasesParametrizadas.length > 0) {
     type ClaseSinDocente = {
       clase: ClaseAcademica;
@@ -794,7 +843,10 @@ asignaciones.post('/auto-bulk', async (c) => {
 
       const docentesLocales = docentesElegibles
         .filter(d => d.tipo_vinculacion === 'central' || d.celula_id === sede.celula_id)
-        .sort((a, b) => (b.max_horas - horasSimuladas[b.id]) - (a.max_horas - horasSimuladas[a.id]));
+        .sort((a, b) =>
+          puntuarDocenteParaClase(b, materia, sede, clase) -
+          puntuarDocenteParaClase(a, materia, sede, clase)
+        );
 
       const horarioFijo = {
         sede_id: clase.sede_id,
@@ -812,6 +864,7 @@ asignaciones.post('/auto-bulk', async (c) => {
 
         const entry = intentarAsignar(docente, materia, [sede], clase.calendario, horarioFijo);
         if (entry) {
+          entry.score += puntuarDocenteParaClase(docente, materia, sede, clase);
           registrarAsignacion(entry, materia);
           cubierta = true;
           break;
@@ -869,11 +922,15 @@ asignaciones.post('/auto-bulk', async (c) => {
                 d.departamento_id !== pendiente.materia.departamento_id) return false;
             return true;
           })
-          .sort((a, b) => (b.max_horas - horasSimuladas[b.id]) - (a.max_horas - horasSimuladas[a.id]));
+          .sort((a, b) =>
+            puntuarDocenteParaClase(b, pendiente.materia, pendiente.sede, pendiente.clase) -
+            puntuarDocenteParaClase(a, pendiente.materia, pendiente.sede, pendiente.clase)
+          );
 
         for (const docente of docentesCercanos) {
           const entry = intentarAsignar(docente, pendiente.materia, [pendiente.sede], pendiente.clase.calendario, horarioFijo);
           if (entry) {
+            entry.score += puntuarDocenteParaClase(docente, pendiente.materia, pendiente.sede, pendiente.clase);
             entry.es_foraneo = true;
             asegurarAdvertenciaForaneo(entry);
             registrarAsignacion(entry, pendiente.materia);

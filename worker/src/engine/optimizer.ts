@@ -28,8 +28,7 @@ export interface SolicitudAsignacion {
   calendario_inicio_periodo?: 'A' | 'B';
 }
 
-const VELOCIDAD_PROMEDIO_KMH = 80;
-const MIN_TRANSFERENCIA_MIN = 30;
+const MIN_TRANSFERENCIA_MIN = 20;
 
 function calendariosSeCruzan(a?: 'A' | 'B' | 'semanal', b?: 'A' | 'B' | 'semanal'): boolean {
   const calA = a ?? 'semanal';
@@ -59,7 +58,10 @@ export function verificarTiempoTraslado(
   horaInicioB: string
 ): boolean {
   const distancia = haversineKm(sedeA.latitud, sedeA.longitud, sedeB.latitud, sedeB.longitud);
-  const tiempoTraslado = (distancia / VELOCIDAD_PROMEDIO_KMH) * 60 + MIN_TRANSFERENCIA_MIN;
+  const factorRuta = distancia <= 5 ? 1.35 : distancia <= 30 ? 1.45 : 1.6;
+  const velocidadKmh = distancia <= 5 ? 25 : distancia <= 30 ? 40 : 55;
+  const bufferMin = distancia <= 5 ? MIN_TRANSFERENCIA_MIN : distancia <= 30 ? 30 : 40;
+  const tiempoTraslado = ((distancia * factorRuta) / velocidadKmh) * 60 + bufferMin;
   const minutosFin = timeToMinutes(horaFinA);
   const minutosInicio = timeToMinutes(horaInicioB);
   return minutosInicio - minutosFin >= tiempoTraslado;
