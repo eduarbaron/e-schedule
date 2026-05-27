@@ -62,6 +62,22 @@ type CursorHorario = {
   clasesPorDia: Record<string, number>;
 };
 
+type BloqueHorarioGenerado = {
+  calendario: CalendarioClase;
+  dia_semana: DiaSemana;
+  hora_inicio: string;
+  hora_fin: string;
+};
+
+type HorarioCompactado = {
+  horario: {
+    dia_semana: DiaSemana;
+    hora_inicio: string;
+    hora_fin: string;
+  };
+  laneIndex: number;
+};
+
 const DIAS_VALIDOS = ['L', 'M', 'X', 'J', 'V', 'S'];
 
 function toMinutes(time: string) {
@@ -158,6 +174,40 @@ function crearCursor(jornadas: FranjaGeneracion[]): CursorHorario {
   return { jornada: 0, minutos: toMinutes(jornadas[0].hora_inicio), clasesPorDia: {} };
 }
 
+function crearCursorDesdeBanda(jornadas: FranjaGeneracion[], banda: number): CursorHorario {
+  const bandaNormalizada = Math.max(0, Math.min(2, banda));
+  const totalMinutos = totalMinutosJornadas(jornadas);
+  let objetivo = Math.floor((totalMinutos * bandaNormalizada) / 3);
+
+  for (let i = 0; i < jornadas.length; i++) {
+    const jornada = jornadas[i];
+    const duracion = toMinutes(jornada.hora_fin) - toMinutes(jornada.hora_inicio);
+    if (objetivo < duracion) {
+      const inicioJornada = toMinutes(jornada.hora_inicio);
+      const offsetHora = Math.min(duracion, Math.round(objetivo / 60) * 60);
+      return { jornada: i, minutos: inicioJornada + offsetHora, clasesPorDia: {} };
+    }
+    objetivo -= duracion;
+  }
+
+  const ultima = jornadas[jornadas.length - 1];
+  return { jornada: jornadas.length - 1, minutos: toMinutes(ultima.hora_inicio), clasesPorDia: {} };
+}
+
+function clonarCursor(cursor: CursorHorario): CursorHorario {
+  return {
+    jornada: cursor.jornada,
+    minutos: cursor.minutos,
+    clasesPorDia: { ...cursor.clasesPorDia },
+  };
+}
+
+function copiarCursor(origen: CursorHorario, destino: CursorHorario) {
+  destino.jornada = origen.jornada;
+  destino.minutos = origen.minutos;
+  destino.clasesPorDia = { ...origen.clasesPorDia };
+}
+
 function siguienteHorario(cursor: CursorHorario, jornadas: FranjaGeneracion[], horas: number) {
   const duracion = horas * 60;
   while (cursor.jornada < jornadas.length) {
@@ -185,17 +235,176 @@ function siguienteHorario(cursor: CursorHorario, jornadas: FranjaGeneracion[], h
   return null;
 }
 
+function calendariosClaseSeCruzan(a: CalendarioClase, b: CalendarioClase) {
+  return a === 'semanal' || b === 'semanal' || a === b;
+}
+
+function bloqueChocaConGrupo(bloque: BloqueHorarioGenerado, bloquesGrupo: BloqueHorarioGenerado[]) {
+  return bloquesGrupo.some(existing =>
+    existing.dia_semana === bloque.dia_semana &&
+    calendariosClaseSeCruzan(existing.calendario, bloque.calendario) &&
+    toMinutes(bloque.hora_inicio) < toMinutes(existing.hora_fin) &&
+    toMinutes(existing.hora_inicio) < toMinutes(bloque.hora_fin)
+  );
+}
+
+function costoCompactacionGrupo(bloque: BloqueHorarioGenerado, bloquesGrupo: BloqueHorarioGenerado[]) {
+  const compatiblesMismoDia = bloquesGrupo
+    .filter(existing =>
+      existing.dia_semana === bloque.dia_semana &&
+      calendariosClaseSeCruzan(existing.calendario, bloque.calendario)
+    )
+    .map(existing => ({
+      inicio: toMinutes(existing.hora_inicio),
+      fin: toMinutes(existing.hora_fin),
+    }));
+
+  const inicio = toMinutes(bloque.hora_inicio);
+  const fin = toMinutes(bloque.hora_fin);
+  const anterior = compatiblesMismoDia
+    .filter(existing => existing.fin <= inicio)
+    .sort((a, b) => b.fin - a.fin)[0];
+  const siguiente = compatiblesMismoDia
+    .filter(existing => existing.inicio >= fin)
+    .sort((a, b) => a.inicio - b.inicio)[0];
+
+  if (anterior || siguiente) {
+    return Math.min(
+      anterior ? inicio - anterior.fin : Number.POSITIVE_INFINITY,
+      siguiente ? siguiente.inicio - fin : Number.POSITIVE_INFINITY
+    );
+  }
+
+  return inicio;
+}
+
+function siguienteHorarioSinChoqueGrupo(
+  cursor: CursorHorario,
+  jornadas: FranjaGeneracion[],
+  horas: number,
+  calendario: CalendarioClase,
+  bloquesGrupo: BloqueHorarioGenerado[]
+) {
+  const duracion = horas * 60;
+  while (cursor.jornada < jornadas.length) {
+    const jornada = jornadas[cursor.jornada];
+    const clasesDia = cursor.clasesPorDia[jornada.dia_semana] ?? 0;
+    if (jornada.max_clases !== null && jornada.max_clases !== undefined && clasesDia >= jornada.max_clases) {
+      cursor.jornada++;
+      if (cursor.jornada < jornadas.length) {
+        cursor.minutos = toMinutes(jornadas[cursor.jornada].hora_inicio);
+      }
+      continue;
+    }
+
+    const finJornada = toMinutes(jornada.hora_fin);
+    if (cursor.minutos + duracion <= finJornada) {
+      const inicio = cursor.minutos;
+      const horario = {
+        dia_semana: jornada.dia_semana,
+        hora_inicio: toTime(inicio),
+        hora_fin: toTime(inicio + duracion),
+      };
+      cursor.minutos += duracion + (jornada.break_minutos ?? 0);
+      if (bloqueChocaConGrupo({ ...horario, calendario }, bloquesGrupo)) {
+        continue;
+      }
+      cursor.clasesPorDia[jornada.dia_semana] = clasesDia + 1;
+      return horario;
+    }
+
+    cursor.jornada++;
+    if (cursor.jornada < jornadas.length) {
+      cursor.minutos = toMinutes(jornadas[cursor.jornada].hora_inicio);
+    }
+  }
+  return null;
+}
+
+function buscarHorarioCompactado(
+  lanes: CursorHorario[],
+  jornadas: FranjaGeneracion[],
+  horas: number,
+  calendario: CalendarioClase,
+  bloquesGrupo: BloqueHorarioGenerado[],
+  bandaPreferida?: number
+): HorarioCompactado | null {
+  const candidatos: Array<{
+    horario: { dia_semana: DiaSemana; hora_inicio: string; hora_fin: string };
+    cursor: CursorHorario;
+    laneIndex: number;
+    nuevoLane: boolean;
+    costo: number;
+  }> = [];
+
+  for (let laneIndex = 0; laneIndex < lanes.length; laneIndex++) {
+    const cursorPrueba = clonarCursor(lanes[laneIndex]);
+    const horario = siguienteHorarioSinChoqueGrupo(cursorPrueba, jornadas, horas, calendario, bloquesGrupo);
+    if (horario) {
+      candidatos.push({
+        horario,
+        cursor: cursorPrueba,
+        laneIndex,
+        nuevoLane: false,
+        costo: costoCompactacionGrupo({ ...horario, calendario }, bloquesGrupo),
+      });
+    }
+  }
+
+  if (candidatos.length === 0) {
+    const cursoresIniciales = bandaPreferida === undefined
+      ? [crearCursor(jornadas)]
+      : [crearCursorDesdeBanda(jornadas, bandaPreferida), crearCursor(jornadas)];
+
+    for (const nuevoCursor of cursoresIniciales) {
+      const horario = siguienteHorarioSinChoqueGrupo(nuevoCursor, jornadas, horas, calendario, bloquesGrupo);
+      if (horario) {
+        candidatos.push({
+          horario,
+          cursor: nuevoCursor,
+          laneIndex: lanes.length,
+          nuevoLane: true,
+          costo: costoCompactacionGrupo({ ...horario, calendario }, bloquesGrupo),
+        });
+        break;
+      }
+    }
+  }
+
+  const mejor = candidatos.sort((a, b) =>
+    a.costo - b.costo ||
+    toMinutes(a.horario.hora_inicio) - toMinutes(b.horario.hora_inicio)
+  )[0];
+  if (!mejor) return null;
+
+  if (mejor.nuevoLane) {
+    lanes.push(mejor.cursor);
+  } else {
+    copiarCursor(mejor.cursor, lanes[mejor.laneIndex]);
+  }
+  return { horario: mejor.horario, laneIndex: mejor.laneIndex };
+}
+
 function escogerCalendario(
   usadas: Record<'A' | 'B', number>,
   horas: number,
   capacidadHoras: number,
   preferida: 'A' | 'B'
 ): 'A' | 'B' | null {
+  return ordenarCalendariosDisponibles(usadas, horas, capacidadHoras, preferida)[0] ?? null;
+}
+
+function ordenarCalendariosDisponibles(
+  usadas: Record<'A' | 'B', number>,
+  horas: number,
+  capacidadHoras: number,
+  preferida: 'A' | 'B'
+): ('A' | 'B')[] {
   const secundaria: 'A' | 'B' = preferida === 'A' ? 'B' : 'A';
   const opciones: ('A' | 'B')[] = usadas.A === usadas.B
     ? [preferida, secundaria]
     : usadas.A < usadas.B ? ['A', 'B'] : ['B', 'A'];
-  return opciones.find(calendario => usadas[calendario] + horas <= capacidadHoras) ?? null;
+  return opciones.filter(calendario => usadas[calendario] + horas <= capacidadHoras);
 }
 
 function buildClaseId(input: {
@@ -212,6 +421,21 @@ function buildClaseId(input: {
 }) {
   const franja = `${input.diaSemana}-${input.calendario}-${input.horaInicio}-${input.horaFin}`.replace(/[:]/g, '');
   return `gen-clase-${input.periodo}-${input.programaId}-${input.sedeId}-sem${input.semestre}-g${input.grupo}-${input.materiaId}-${franja}`;
+}
+
+function departamentoKey(materia: { departamento_id?: string | null }) {
+  return materia.departamento_id ?? '__sin_departamento__';
+}
+
+function ordenarUnidadesDepartamento<T extends { semestre: number; grupo: number; materia: { nombre: string; horas_semana: number } }>(
+  unidades: T[]
+) {
+  return [...unidades].sort((a, b) =>
+    a.grupo - b.grupo ||
+    a.semestre - b.semestre ||
+    Number(b.materia.horas_semana) - Number(a.materia.horas_semana) ||
+    String(a.materia.nombre).localeCompare(String(b.materia.nombre))
+  );
 }
 
 function normalizarSemestresGeneracion(
@@ -633,6 +857,16 @@ clases.post('/generar', async (c) => {
       continue;
     }
 
+    type UnidadClaseGeneracion = {
+      semestre: number;
+      grupo: number;
+      materia: any;
+    };
+    const unidadesPorDepartamento = new Map<string, UnidadClaseGeneracion[]>();
+    const horasUsadasPorGrupo = new Map<string, Record<'A' | 'B', number>>();
+    const horariosPorGrupo = new Map<string, BloqueHorarioGenerado[]>();
+    const lanesPorDepartamentoCalendario = new Map<string, CursorHorario[]>();
+
     for (const semestreConfig of semestres) {
       const { semestre, grupos } = semestreConfig;
       const materiasSemestre = materias
@@ -641,47 +875,87 @@ clases.post('/generar', async (c) => {
       if (materiasSemestre.length === 0) continue;
 
       for (let grupo = 1; grupo <= grupos; grupo++) {
-        const preferida: 'A' | 'B' = (sedeIndex + semestre + grupo) % 2 === 0 ? 'A' : 'B';
-        const horasUsadas: Record<'A' | 'B', number> = { A: 0, B: 0 };
-        const cursores: Record<CalendarioClase, CursorHorario> = {
-          A: crearCursor(franjasSede),
-          B: crearCursor(franjasSede),
-          semanal: crearCursor(franjasSede),
-        };
-
         for (const materia of materiasSemestre) {
-          const horas = Number(materia.horas_semana);
-          const calendario: CalendarioClase = programa.tipo_ciclo === 'semanal'
-            ? 'semanal'
-            : escogerCalendario(horasUsadas, horas, capacidadHoras, preferida) as CalendarioClase;
-          if (!calendario) {
-            errores.push(`No hay cupo para ${materia.nombre} en ${sede.nombre}, semestre ${semestre}, grupo ${grupo}`);
-            continue;
-          }
-          if (calendario !== 'semanal') horasUsadas[calendario] += horas;
-          const horario = siguienteHorario(cursores[calendario], franjasSede, horas);
-          if (!horario) {
-            errores.push(`No hay horario disponible para ${materia.nombre} en ${sede.nombre}, semestre ${semestre}, grupo ${grupo}, ${calendario === 'semanal' ? 'semanal' : `semana ${calendario}`}`);
-            continue;
-          }
-          const id = buildClaseId({
-            periodo,
-            programaId,
-            sedeId: sede.id,
-            semestre,
-            grupo,
-            materiaId: materia.id,
-            calendario,
-            diaSemana: horario.dia_semana,
-            horaInicio: horario.hora_inicio,
-            horaFin: horario.hora_fin,
-          });
-          statements.push(db.prepare(`
-            INSERT INTO clases (id, periodo, programa_id, materia_id, sede_id, grupo, calendario, dia_semana, hora_inicio, hora_fin)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `).bind(id, periodo, programaId, materia.id, sede.id, grupo, calendario, horario.dia_semana, horario.hora_inicio, horario.hora_fin));
-          clasesCreadas++;
+          const key = departamentoKey(materia);
+          if (!unidadesPorDepartamento.has(key)) unidadesPorDepartamento.set(key, []);
+          unidadesPorDepartamento.get(key)!.push({ semestre, grupo, materia });
         }
+      }
+    }
+
+    const departamentosOrdenados = [...unidadesPorDepartamento.entries()]
+      .sort(([depA, unidadesA], [depB, unidadesB]) =>
+        unidadesB.length - unidadesA.length ||
+        depA.localeCompare(depB)
+      );
+    const mayorCargaDepartamento = departamentosOrdenados[0]?.[1].length ?? 0;
+    const umbralBajaCarga = Math.max(2, Math.ceil(mayorCargaDepartamento * 0.35));
+    let rotacionBajaCarga = sedeIndex % 3;
+
+    for (const [departamento, unidadesDepartamento] of departamentosOrdenados) {
+      const esDepartamentoBajaCarga = unidadesDepartamento.length <= umbralBajaCarga;
+      for (const unidad of ordenarUnidadesDepartamento(unidadesDepartamento)) {
+        const { semestre, grupo, materia } = unidad;
+        const horas = Number(materia.horas_semana);
+        const grupoKey = `${semestre}|${grupo}`;
+        if (!horasUsadasPorGrupo.has(grupoKey)) horasUsadasPorGrupo.set(grupoKey, { A: 0, B: 0 });
+        if (!horariosPorGrupo.has(grupoKey)) horariosPorGrupo.set(grupoKey, []);
+        const horasUsadas = horasUsadasPorGrupo.get(grupoKey)!;
+        const horariosGrupo = horariosPorGrupo.get(grupoKey)!;
+        const preferida: 'A' | 'B' = (sedeIndex + semestre + grupo) % 2 === 0 ? 'A' : 'B';
+        const calendariosAProbar: CalendarioClase[] = programa.tipo_ciclo === 'semanal'
+          ? ['semanal']
+          : ordenarCalendariosDisponibles(horasUsadas, horas, capacidadHoras, preferida);
+        if (calendariosAProbar.length === 0) {
+          errores.push(`No hay cupo para ${materia.nombre} en ${sede.nombre}, semestre ${semestre}, grupo ${grupo}`);
+          continue;
+        }
+        let calendario: CalendarioClase | null = null;
+        let horario: { dia_semana: DiaSemana; hora_inicio: string; hora_fin: string } | null = null;
+        for (const calendarioCandidato of calendariosAProbar) {
+          const lanesKey = `${departamento}|${calendarioCandidato}`;
+          if (!lanesPorDepartamentoCalendario.has(lanesKey)) lanesPorDepartamentoCalendario.set(lanesKey, []);
+          const resultado = buscarHorarioCompactado(
+            lanesPorDepartamentoCalendario.get(lanesKey)!,
+            franjasSede,
+            horas,
+            calendarioCandidato,
+            horariosGrupo,
+            esDepartamentoBajaCarga ? rotacionBajaCarga % 3 : undefined
+          );
+          if (resultado) {
+            calendario = calendarioCandidato;
+            horario = resultado.horario;
+            if (esDepartamentoBajaCarga) rotacionBajaCarga++;
+            break;
+          }
+        }
+        if (!horario || !calendario) {
+          const detalleCalendario = programa.tipo_ciclo === 'semanal'
+            ? 'semanal'
+            : `semanas ${calendariosAProbar.join('/')}`;
+          errores.push(`No hay horario disponible para ${materia.nombre} en ${sede.nombre}, semestre ${semestre}, grupo ${grupo}, ${detalleCalendario}`);
+          continue;
+        }
+        if (calendario !== 'semanal') horasUsadas[calendario] += horas;
+        horariosGrupo.push({ ...horario, calendario });
+        const id = buildClaseId({
+          periodo,
+          programaId,
+          sedeId: sede.id,
+          semestre,
+          grupo,
+          materiaId: materia.id,
+          calendario,
+          diaSemana: horario.dia_semana,
+          horaInicio: horario.hora_inicio,
+          horaFin: horario.hora_fin,
+        });
+        statements.push(db.prepare(`
+          INSERT INTO clases (id, periodo, programa_id, materia_id, sede_id, grupo, calendario, dia_semana, hora_inicio, hora_fin)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(id, periodo, programaId, materia.id, sede.id, grupo, calendario, horario.dia_semana, horario.hora_inicio, horario.hora_fin));
+        clasesCreadas++;
       }
     }
   }
