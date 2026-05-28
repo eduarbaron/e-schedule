@@ -30,6 +30,7 @@ import {
   useCreateClase,
   useDeleteClase,
   useBulkDeleteClases,
+  useCelulas,
   useClaseTemplates,
   useCreateClaseTemplate,
   useDeleteClaseTemplate,
@@ -37,11 +38,12 @@ import {
   useMaterias,
   useProgramaSedes,
   useProgramas,
+  useProyeccionesClases,
   useSedes,
   useUpdateClaseTemplate,
 } from '../api/hooks';
 import api from '../api/client';
-import type { ClaseAcademica, ClaseTemplate, Materia, Programa, Sede } from '../types';
+import type { Celula, ClaseAcademica, ClaseTemplate, Materia, Programa, Sede } from '../types';
 import { DIA_LABELS } from '../types';
 import { useConfirm } from '../components/ConfirmProvider';
 import { usePeriodoTrabajo } from '../context/PeriodoContext';
@@ -147,16 +149,19 @@ export function Clases() {
   const confirm = useConfirm();
   const { periodoId: periodoFinal, periodoSeleccionado } = usePeriodoTrabajo();
   const [programaFiltro, setProgramaFiltro] = useState('');
+  const [celulaFiltro, setCelulaFiltro] = useState('');
   const [sedeFiltro, setSedeFiltro] = useState('');
   const [semestreFiltro, setSemestreFiltro] = useState('');
 
   const { data: clases = [], isLoading } = useClases({
     ...(periodoFinal ? { periodo: periodoFinal } : {}),
     ...(programaFiltro ? { programa_id: programaFiltro } : {}),
+    ...(celulaFiltro ? { celula_id: celulaFiltro } : {}),
     ...(sedeFiltro ? { sede_id: sedeFiltro } : {}),
     ...(semestreFiltro ? { semestre: semestreFiltro } : {}),
   });
   const { data: programas = [] } = useProgramas();
+  const { data: celulas = [] } = useCelulas();
   const { data: materias = [] } = useMaterias();
   const { data: sedes = [] } = useSedes();
   const createClase = useCreateClase();
@@ -170,13 +175,19 @@ export function Clases() {
 
   const [form, setForm] = useState(defaultClaseForm);
   const [generatorForm, setGeneratorForm] = useState(defaultGeneratorForm);
+  const [celulaGenerador, setCelulaGenerador] = useState('');
 
   const { data: sedesProgramaGenerador = [] } = useProgramaSedes(generatorForm.programa_id);
   const { data: claseTemplates = [] } = useClaseTemplates(generatorForm.programa_id);
+  const { data: proyeccionesGenerador = [] } = useProyeccionesClases({
+    ...(periodoFinal ? { periodo: periodoFinal } : {}),
+    ...(generatorForm.programa_id ? { programa_id: generatorForm.programa_id } : {}),
+  });
   const createTemplate = useCreateClaseTemplate();
   const updateTemplate = useUpdateClaseTemplate();
   const deleteTemplate = useDeleteClaseTemplate();
   const claseTemplatesList = Array.isArray(claseTemplates) ? claseTemplates as ClaseTemplate[] : [];
+  const proyeccionesGeneradorList = Array.isArray(proyeccionesGenerador) ? proyeccionesGenerador as any[] : [];
   const [templateForm, setTemplateForm] = useState({
     id: '',
     nombre: '',
@@ -220,9 +231,22 @@ export function Clases() {
     [sedesProgramaGenerador, sedes]
   );
 
+  const sedesProyectadasGenerador = useMemo(() => {
+    const sedesProyectadasIds = new Set(proyeccionesGeneradorList.map((item: any) => item.sede_id as string));
+    return sedesGenerador.filter(sede =>
+      sedesProyectadasIds.has(sede.id) &&
+      (!celulaGenerador || sede.celula_id === celulaGenerador)
+    );
+  }, [celulaGenerador, proyeccionesGeneradorList, sedesGenerador]);
+
+  const proyeccionesFiltradasGenerador = useMemo(() => {
+    const sedesIds = new Set(sedesProyectadasGenerador.map(sede => sede.id));
+    return proyeccionesGeneradorList.filter((item: any) => sedesIds.has(item.sede_id));
+  }, [proyeccionesGeneradorList, sedesProyectadasGenerador]);
+
   const sedesSeleccionadasGenerador = useMemo(
-    () => sedesGenerador.filter(s => generatorForm.sede_ids.includes(s.id)),
-    [sedesGenerador, generatorForm.sede_ids]
+    () => sedesProyectadasGenerador.filter(s => generatorForm.sede_ids.includes(s.id)),
+    [sedesProyectadasGenerador, generatorForm.sede_ids]
   );
 
   const templateOptions = useMemo(
@@ -262,6 +286,11 @@ export function Clases() {
       .sort((a, b) => a - b);
     return semestres.map(sem => ({ value: String(sem), label: `${sem}° semestre` }));
   }, [materias, programaFiltro]);
+
+  const sedesFiltroDisponibles = useMemo(
+    () => (sedes as Sede[]).filter(sede => !celulaFiltro || sede.celula_id === celulaFiltro),
+    [sedes, celulaFiltro]
+  );
 
   const materiasFiltradas = useMemo(
     () => materiasDelPrograma.filter(m => !form.semestre || m.semestre === Number(form.semestre)),
@@ -342,19 +371,6 @@ export function Clases() {
       ...f,
       template_por_sede: Object.fromEntries(f.sede_ids.map(sedeId => [sedeId, templateId])),
     }));
-  };
-
-  const openCreateTemplate = () => {
-    setTemplateForm({
-      id: '',
-      nombre: '',
-      programa_id: generatorForm.programa_id,
-      dias_semana: generatorForm.dias_semana,
-      jornadas: generatorForm.jornadas,
-      dias_config: diasConfigDesdeLegacy(generatorForm.dias_semana, generatorForm.jornadas),
-      semestres: semestresGenerador.slice(0, 1).map(s => ({ semestre: Number(s.value), grupos: generatorForm.grupos_por_semestre })),
-    });
-    openTemplate();
   };
 
   const openEditTemplate = (template: ClaseTemplate) => {
@@ -473,19 +489,21 @@ export function Clases() {
   };
 
   const handleGenerate = async () => {
-    if (!periodoFinal || !generatorForm.programa_id || generatorForm.sede_ids.length === 0) {
-      notifications.show({ message: 'Periodo, programa y al menos una sede son requeridos', color: 'red' });
+    if (!periodoFinal || !generatorForm.programa_id) {
+      notifications.show({ message: 'Periodo y programa son requeridos', color: 'red' });
       return;
     }
-    const sedesSinTemplate = generatorForm.sede_ids.filter(sedeId => !generatorForm.template_por_sede[sedeId]);
-    if (sedesSinTemplate.length > 0) {
-      notifications.show({ message: 'Selecciona una plantilla para cada sede', color: 'red' });
+    if (proyeccionesGeneradorList.length === 0) {
+      notifications.show({ message: 'Primero crea la proyección de clases para este programa', color: 'red' });
       return;
     }
-    if (generatorForm.jornadas.some(j => !j.hora_inicio || !j.hora_fin || j.hora_inicio >= j.hora_fin)) {
-      notifications.show({ message: 'Cada jornada debe tener hora inicio menor que hora fin', color: 'red' });
+    if (proyeccionesFiltradasGenerador.length === 0) {
+      notifications.show({ message: 'No hay proyecciones para la célula seleccionada', color: 'red' });
       return;
     }
+    const sedeIdsGeneracion = generatorForm.sede_ids.length > 0
+      ? generatorForm.sede_ids
+      : sedesProyectadasGenerador.map(sede => sede.id);
     if (generatorForm.reemplazar_existentes) {
       const confirmed = await confirm({
         title: 'Reemplazar clases existentes',
@@ -496,27 +514,11 @@ export function Clases() {
       if (!confirmed) return;
     }
 
-    const semestresPorSede = Object.fromEntries(
-      generatorForm.sede_ids.map(sedeId => [
-        sedeId,
-        (generatorForm.semestres_por_sede[sedeId]?.length ? generatorForm.semestres_por_sede[sedeId] : semestresGenerador.map(s => s.value))
-          .map(Number),
-      ])
-    );
-
     try {
       const res = await generateClases.mutateAsync({
         periodo: periodoFinal,
         programa_id: generatorForm.programa_id,
-        sede_ids: generatorForm.sede_ids,
-        sede_templates: generatorForm.sede_ids.map(sedeId => ({
-          sede_id: sedeId,
-          template_id: generatorForm.template_por_sede[sedeId],
-        })),
-        semestres_por_sede: semestresPorSede,
-        grupos_por_semestre: generatorForm.grupos_por_semestre,
-        dias_semana: generatorForm.dias_semana,
-        jornadas: generatorForm.jornadas,
+        sede_ids: sedeIdsGeneracion,
         reemplazar_existentes: generatorForm.reemplazar_existentes,
       });
       notifications.show({ message: `${res.clases_creadas} clase(s) generada(s)`, color: 'green' });
@@ -607,6 +609,7 @@ export function Clases() {
     try {
       const params: Record<string, string> = { periodo: periodoFinal };
       if (programaFiltro) params.programa_id = programaFiltro;
+      if (celulaFiltro) params.celula_id = celulaFiltro;
       if (sedeFiltro) params.sede_id = sedeFiltro;
       if (semestreFiltro) params.semestre = semestreFiltro;
       const res = await bulkDeleteClases.mutateAsync(params);
@@ -745,9 +748,21 @@ export function Clases() {
             searchable
           />
           <Select
+            label="Célula / zona"
+            placeholder="Todas las células"
+            data={(celulas as Celula[]).map(celula => ({ value: celula.id, label: celula.nombre }))}
+            value={celulaFiltro || null}
+            onChange={v => {
+              setCelulaFiltro(v || '');
+              setSedeFiltro('');
+            }}
+            clearable
+            searchable
+          />
+          <Select
             label="Sede"
             placeholder="Todas las sedes"
-            data={(sedes as Sede[]).map(s => ({ value: s.id, label: s.nombre }))}
+            data={sedesFiltroDisponibles.map(s => ({ value: s.id, label: s.nombre }))}
             value={sedeFiltro || null}
             onChange={v => setSedeFiltro(v || '')}
             clearable
@@ -872,17 +887,35 @@ export function Clases() {
               label="Programa"
               data={(programas as Programa[]).map(p => ({ value: p.id, label: p.nombre }))}
               value={generatorForm.programa_id || null}
-              onChange={v => setGeneratorForm(f => ({
-                ...f,
-                programa_id: v || '',
-                sede_ids: [],
-                template_por_sede: {},
-                semestres_por_sede: {},
-              }))}
+              onChange={v => {
+                setCelulaGenerador('');
+                setGeneratorForm(f => ({
+                  ...f,
+                  programa_id: v || '',
+                  sede_ids: [],
+                  template_por_sede: {},
+                  semestres_por_sede: {},
+                }));
+              }}
               searchable
               required
             />
           </Group>
+
+          <Select
+            label="Célula / zona"
+            placeholder="Todas las células proyectadas"
+            description="Opcional. Si seleccionas una célula, se generan solo sus sedes proyectadas."
+            data={(celulas as Celula[]).map(celula => ({ value: celula.id, label: celula.nombre }))}
+            value={celulaGenerador || null}
+            onChange={v => {
+              setCelulaGenerador(v || '');
+              setGeneratorForm(f => ({ ...f, sede_ids: [] }));
+            }}
+            disabled={!generatorForm.programa_id || proyeccionesGeneradorList.length === 0}
+            clearable
+            searchable
+          />
 
           {programaGenerador && (
             <Paper p="sm" radius="md" withBorder bg="gray.0">
@@ -898,43 +931,27 @@ export function Clases() {
                     {programaGenerador.tipo_ciclo === 'quincenal' ? 'Quincenal' : 'Semanal'}
                   </Badge>
                   <Badge color="gray" variant="light">{semestresGenerador.length} semestre(s)</Badge>
-                  <Badge color="gray" variant="light">{sedesGenerador.length} sede(s) ofertada(s)</Badge>
+                  <Badge color="gray" variant="light">{sedesProyectadasGenerador.length} sede(s) proyectada(s)</Badge>
+                  {celulaGenerador && <Badge color="teal" variant="light">1 célula</Badge>}
                 </Group>
               </Group>
             </Paper>
           )}
 
           <MultiSelect
-            label="Sedes donde se generaran clases"
-            placeholder="Selecciona las sedes ofertadas del programa"
-            data={sedesGenerador.map(s => ({ value: s.id, label: s.nombre }))}
+            label="Sedes a generar"
+            placeholder="Todas las sedes proyectadas"
+            description="Opcional. Si no seleccionas sedes, se generan todas las sedes proyectadas del programa o célula seleccionada."
+            data={sedesProyectadasGenerador.map(s => ({ value: s.id, label: s.nombre }))}
             value={generatorForm.sede_ids}
-            onChange={v => setGeneratorForm(f => {
-              const defaultSemestre = semestresGenerador[0]?.value ? [semestresGenerador[0].value] : [];
-              const semestresPorSede = Object.fromEntries(
-                v.map(sedeId => [sedeId, f.semestres_por_sede[sedeId] ?? defaultSemestre])
-              );
-              const templatePorSede = Object.fromEntries(
-                v.map(sedeId => [sedeId, f.template_por_sede[sedeId] ?? ''])
-              );
-              return { ...f, sede_ids: v, semestres_por_sede: semestresPorSede, template_por_sede: templatePorSede };
-            })}
-            disabled={!generatorForm.programa_id}
+            onChange={v => setGeneratorForm(f => ({ ...f, sede_ids: v }))}
+            disabled={!generatorForm.programa_id || proyeccionesGeneradorList.length === 0}
             searchable
-            required
           />
 
+          {false && (
           <Paper p="sm" radius="md" withBorder>
             <Stack gap="sm">
-              <Group justify="space-between" align="center">
-                <div>
-                  <Text size="sm" fw={700}>Plantillas</Text>
-                  <Text size="xs" c="dimmed">Cada plantilla define días, jornadas, semestres y grupos.</Text>
-                </div>
-                <Button size="xs" leftSection={<CalendarPlus size={14} />} variant="light" color="brand" onClick={openCreateTemplate}>
-                  Nueva plantilla
-                </Button>
-              </Group>
               <Group grow align="flex-end">
                 <Select
                   label="Aplicar plantilla a todas las sedes"
@@ -972,8 +989,9 @@ export function Clases() {
               )}
             </Stack>
           </Paper>
+          )}
 
-          {sedesSeleccionadasGenerador.length > 0 && (
+          {false && sedesSeleccionadasGenerador.length > 0 && (
             <Paper p="sm" radius="md" withBorder>
               <Stack gap="sm">
                 <Text size="sm" fw={700}>Plantilla por sede</Text>
@@ -1045,13 +1063,25 @@ export function Clases() {
 
           <Paper p="sm" radius="md" bg="brand.0">
             <Text size="sm" fw={600}>
-              Se generaran clases en {generatorForm.sede_ids.length} sede(s), usando una plantilla academica por sede.
+              Se generaran clases desde {proyeccionesGeneradorList.length} proyeccion(es) del programa seleccionado.
             </Text>
           </Paper>
 
+          {generatorForm.programa_id && proyeccionesGeneradorList.length === 0 && (
+            <Alert icon={<Info size={16} />} color="yellow" title="Proyección requerida">
+              Primero crea la proyección de clases para este periodo y programa desde Operación → Proyección de clases.
+            </Alert>
+          )}
+
           <Group justify="flex-end">
             <Button variant="light" onClick={closeGeneratorModal}>Cancelar</Button>
-            <Button color="brand" leftSection={<Wand2 size={16} />} onClick={handleGenerate} loading={generateClases.isPending}>
+            <Button
+              color="brand"
+              leftSection={<Wand2 size={16} />}
+              onClick={handleGenerate}
+              loading={generateClases.isPending}
+              disabled={!generatorForm.programa_id || proyeccionesGeneradorList.length === 0}
+            >
               Generar clases
             </Button>
           </Group>

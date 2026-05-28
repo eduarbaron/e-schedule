@@ -1,7 +1,7 @@
 import { AppShell, Burger, Group, NavLink, Text, ScrollArea, Box, Divider, Select, Tooltip, ActionIcon, Avatar } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
-  LayoutDashboard, MapPin, Users, CalendarDays, Map, GraduationCap, Calendar, Library, ClipboardList, CalendarRange, PanelsTopLeft, BookOpen, LogOut, ShieldCheck
+  LayoutDashboard, MapPin, Users, CalendarDays, Map, GraduationCap, Calendar, Library, ClipboardList, CalendarRange, BookOpen, LogOut, ShieldCheck, FileSpreadsheet
 } from 'lucide-react';
 import { usePeriodoTrabajo } from '../context/PeriodoContext';
 import { useAuth } from '../context/AuthContext';
@@ -34,14 +34,14 @@ const navGroups = [
       { id: 'programas', label: 'Programas', icon: GraduationCap },
       { id: 'materias', label: 'Materias', icon: BookOpen },
       { id: 'periodos', label: 'Períodos', icon: Calendar },
-      { id: 'clases', label: 'Clases', icon: ClipboardList },
-      { id: 'plantillas-clases', label: 'Plantillas de clases', icon: PanelsTopLeft },
-      { id: 'horario-sede', label: 'Horario por sede', icon: CalendarRange },
     ],
   },
   {
     label: 'Operación',
     items: [
+      { id: 'proyeccion-clases', label: 'Proyeccion de clases', icon: FileSpreadsheet },
+      { id: 'clases', label: 'Clases', icon: ClipboardList },
+      { id: 'horario-sede', label: 'Horario por sede', icon: CalendarRange },
       { id: 'asignaciones', label: 'Asignaciones', icon: CalendarDays },
     ],
   },

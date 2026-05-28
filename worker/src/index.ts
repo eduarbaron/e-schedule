@@ -17,6 +17,7 @@ import periodos from './routes/periodos';
 import facultades from './routes/facultades';
 import departamentos from './routes/departamentos';
 import clases from './routes/clases';
+import proyeccionesClases from './routes/proyeccionesClases';
 import dev from './routes/dev';
 
 const app = new Hono<AppEnv>();
@@ -53,6 +54,7 @@ app.route('/api/programas', programas);
 app.route('/api/periodos', periodos);
 app.route('/api/facultades', facultades);
 app.route('/api/departamentos', departamentos);
+app.route('/api/proyecciones-clases', proyeccionesClases);
 app.route('/api/clases', clases);
 
 // ─── Rutas solo admin ────────────────────────────────────────────────────────

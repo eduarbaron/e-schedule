@@ -15,11 +15,12 @@ import { Facultades } from './pages/Facultades'
 import { Clases } from './pages/Clases'
 import { HorarioSede } from './pages/HorarioSede'
 import { PlantillasClases } from './pages/PlantillasClases'
+import { ProyeccionClases } from './pages/ProyeccionClases'
 import { DocumentacionStandalone } from './pages/Documentacion'
 import { Usuarios } from './pages/Usuarios'
 import { PeriodoProvider } from './context/PeriodoContext'
 
-type Page = 'dashboard' | 'docentes' | 'sedes' | 'celulas' | 'programas' | 'periodos' | 'facultades' | 'materias' | 'clases' | 'plantillas-clases' | 'horario-sede' | 'asignaciones' | 'mapa' | 'usuarios'
+type Page = 'dashboard' | 'docentes' | 'sedes' | 'celulas' | 'programas' | 'periodos' | 'facultades' | 'materias' | 'clases' | 'plantillas-clases' | 'proyeccion-clases' | 'horario-sede' | 'asignaciones' | 'mapa' | 'usuarios'
 
 function App() {
   const { user, isLoading, isAdmin } = useAuth();
@@ -50,6 +51,7 @@ function App() {
       case 'materias': return <Materias />
       case 'clases': return <Clases />
       case 'plantillas-clases': return <PlantillasClases />
+      case 'proyeccion-clases': return <ProyeccionClases />
       case 'horario-sede': return <HorarioSede />
       case 'asignaciones': return <Asignaciones />
       case 'mapa': return <Mapa />

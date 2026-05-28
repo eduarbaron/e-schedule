@@ -150,6 +150,36 @@ export const useClaseTemplates = (programaId?: string) =>
     queryFn: () => api.get('/clases/templates', { params: programaId ? { programa_id: programaId } : {} }).then(r => r.data),
   });
 
+export const useProyeccionesClases = (params?: Record<string, string>) =>
+  useQuery({
+    queryKey: ['proyecciones-clases', params],
+    queryFn: () => api.get('/proyecciones-clases', { params }).then(r => r.data),
+  });
+
+export const useGenerateProyeccionesClases = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => api.post('/proyecciones-clases/generar', data).then(r => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['proyecciones-clases'] }),
+  });
+};
+
+export const useDeleteProyeccionClase = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/proyecciones-clases/${id}`).then(r => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['proyecciones-clases'] }),
+  });
+};
+
+export const useBulkDeleteProyeccionesClases = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: Record<string, string>) => api.delete('/proyecciones-clases/bulk', { params }).then(r => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['proyecciones-clases'] }),
+  });
+};
+
 export const useCreateClaseTemplate = () => {
   const qc = useQueryClient();
   return useMutation({
