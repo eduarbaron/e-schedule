@@ -951,7 +951,6 @@ clases.post('/generar', async (c) => {
     await deleteClasesPorFiltro(db, { periodo, programa_id: programaId, sede_ids: sedesConProyeccion.map(s => s.id) });
   }
 
-  const statements: D1PreparedStatement[] = [];
   const errores: string[] = [];
   let clasesCreadas = 0;
   const semestresPrograma = [...new Set(materias.map(m => Number(m.semestre)).filter(Number.isFinite))].sort((a, b) => a - b);
@@ -962,6 +961,18 @@ clases.post('/generar', async (c) => {
     semestre: number;
     grupo: number;
     materia: any;
+  };
+  type ClaseGenerada = {
+    contexto: SedeGeneracionContext;
+    departamento: string;
+    semestre: number;
+    grupo: number;
+    materia: any;
+    proyeccionId: string | null;
+    calendario: CalendarioClase;
+    dia_semana: DiaSemana;
+    hora_inicio: string;
+    hora_fin: string;
   };
   type SedeGeneracionContext = {
     sedeIndex: number;
@@ -980,6 +991,7 @@ clases.post('/generar', async (c) => {
     bandasDepartamentoSede: Map<string, number>;
   };
   const contextosSede: SedeGeneracionContext[] = [];
+  const clasesGeneradas: ClaseGenerada[] = [];
 
   for (const [sedeIndex, sede] of sedesConProyeccion.entries()) {
     const configSede: ConfiguracionSedeGeneracion = configuracionSedes[sede.id] ?? {};
@@ -1148,22 +1160,18 @@ clases.post('/generar', async (c) => {
     const ocupacionFinalKey = ocupacionKey(sede.celula_id, departamento, calendario);
     if (!ocupacionPorCelulaDepartamento.has(ocupacionFinalKey)) ocupacionPorCelulaDepartamento.set(ocupacionFinalKey, []);
     ocupacionPorCelulaDepartamento.get(ocupacionFinalKey)!.push({ ...horario, calendario });
-    const id = buildClaseId({
-      periodo,
-      programaId,
-      sedeId: sede.id,
+    clasesGeneradas.push({
+      contexto,
+      departamento,
       semestre,
       grupo,
-      materiaId: materia.id,
+      materia,
+      proyeccionId: proyeccionClase?.id ?? null,
       calendario,
-      diaSemana: horario.dia_semana,
-      horaInicio: horario.hora_inicio,
-      horaFin: horario.hora_fin,
+      dia_semana: horario.dia_semana,
+      hora_inicio: horario.hora_inicio,
+      hora_fin: horario.hora_fin,
     });
-    statements.push(db.prepare(`
-      INSERT INTO clases (id, periodo, programa_id, materia_id, sede_id, grupo, calendario, dia_semana, hora_inicio, hora_fin, proyeccion_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).bind(id, periodo, programaId, materia.id, sede.id, grupo, calendario, horario.dia_semana, horario.hora_inicio, horario.hora_fin, proyeccionClase?.id ?? null));
     clasesCreadas++;
   };
 
@@ -1187,7 +1195,321 @@ clases.post('/generar', async (c) => {
 
   if (errores.length > 0) return c.json({ error: 'No fue posible generar todas las clases', detalles: errores.slice(0, 12) }, 400);
 
+  const bloqueSolapa = (
+    a: { dia_semana: DiaSemana; hora_inicio: string; hora_fin: string },
+    b: { dia_semana: DiaSemana; hora_inicio: string; hora_fin: string }
+  ) =>
+    a.dia_semana === b.dia_semana &&
+    toMinutes(a.hora_inicio) < toMinutes(b.hora_fin) &&
+    toMinutes(b.hora_inicio) < toMinutes(a.hora_fin);
+
+  type HorarioRefinamiento = { dia_semana: DiaSemana; hora_inicio: string; hora_fin: string };
+  const horarioRefinamiento = (clase: ClaseGenerada, overrides?: Map<ClaseGenerada, HorarioRefinamiento>) =>
+    overrides?.get(clase) ?? clase;
+
+  const maxConcurrenciaRefinamiento = (
+    clases: ClaseGenerada[],
+    overrides?: Map<ClaseGenerada, HorarioRefinamiento>
+  ) => {
+    const puntos = new Set<string>();
+    const intervalos = clases.map(clase => {
+      const horario = horarioRefinamiento(clase, overrides);
+      puntos.add(`${horario.dia_semana}|${horario.hora_inicio}`);
+      puntos.add(`${horario.dia_semana}|${horario.hora_fin}`);
+      return {
+        dia_semana: horario.dia_semana,
+        hora_inicio: horario.hora_inicio,
+        hora_fin: horario.hora_fin,
+      };
+    });
+    let maximo = 0;
+    for (const punto of puntos) {
+      const [dia, hora] = punto.split('|') as [DiaSemana, string];
+      const activas = intervalos.filter(intervalo =>
+        intervalo.dia_semana === dia &&
+        toMinutes(intervalo.hora_inicio) <= toMinutes(hora) &&
+        toMinutes(hora) < toMinutes(intervalo.hora_fin)
+      ).length;
+      maximo = Math.max(maximo, activas);
+    }
+    return maximo;
+  };
+
+  const clasesMismaSedeDepartamento = (clase: ClaseGenerada) => clasesGeneradas.filter(otra =>
+    otra.contexto.sede.id === clase.contexto.sede.id &&
+    otra.departamento === clase.departamento &&
+    otra.calendario === clase.calendario
+  );
+
+  const clasesMismaCelulaDepartamento = (clase: ClaseGenerada) => clasesGeneradas.filter(otra =>
+    (otra.contexto.sede.celula_id ?? '__sin_celula__') === (clase.contexto.sede.celula_id ?? '__sin_celula__') &&
+    otra.departamento === clase.departamento &&
+    otra.calendario === clase.calendario
+  );
+  const esDepartamentoDominante = (clase: ClaseGenerada) =>
+    (clase.contexto.unidadesPorDepartamento.get(clase.departamento)?.length ?? 0) === clase.contexto.mayorCargaDepartamento;
+
+  const solapesGrupoRefinamiento = (
+    clase: ClaseGenerada,
+    horario: HorarioRefinamiento,
+    overrides?: Map<ClaseGenerada, HorarioRefinamiento>
+  ) => {
+    const bloqueCandidato = { ...horario, calendario: clase.calendario };
+    return clasesGeneradas.filter(otra =>
+      otra !== clase &&
+      otra.contexto.sede.id === clase.contexto.sede.id &&
+      otra.calendario === clase.calendario &&
+      otra.semestre === clase.semestre &&
+      otra.grupo === clase.grupo &&
+      bloqueSolapa(bloqueCandidato, horarioRefinamiento(otra, overrides))
+    ).length;
+  };
+
+  const candidatosRefinamiento = (clase: ClaseGenerada) => {
+    const duracion = toMinutes(clase.hora_fin) - toMinutes(clase.hora_inicio);
+    const candidatos: Array<{ dia_semana: DiaSemana; hora_inicio: string; hora_fin: string }> = [];
+    for (const franja of clase.contexto.franjasSede) {
+      const inicioFranja = toMinutes(franja.hora_inicio);
+      const finFranja = toMinutes(franja.hora_fin);
+      for (let inicio = inicioFranja; inicio + duracion <= finFranja; inicio += 60) {
+        candidatos.push({
+          dia_semana: franja.dia_semana,
+          hora_inicio: toTime(inicio),
+          hora_fin: toTime(inicio + duracion),
+        });
+      }
+    }
+    return candidatos;
+  };
+
+  for (let pasada = 0; pasada < 3; pasada++) {
+    let movimientos = 0;
+    const candidatas = [...clasesGeneradas]
+      .map(clase => ({
+        clase,
+        picoLocal: maxConcurrenciaRefinamiento(clasesMismaSedeDepartamento(clase)),
+        picoCelula: maxConcurrenciaRefinamiento(clasesMismaCelulaDepartamento(clase)),
+      }))
+      .filter(item => item.picoLocal > 1)
+      .sort((a, b) =>
+        b.picoLocal - a.picoLocal ||
+        b.picoCelula - a.picoCelula ||
+        a.clase.departamento.localeCompare(b.clase.departamento) ||
+        a.clase.contexto.sede.nombre.localeCompare(b.clase.contexto.sede.nombre) ||
+        a.clase.grupo - b.clase.grupo
+      );
+
+    for (const { clase, picoLocal, picoCelula } of candidatas) {
+      let mejorHorario: { dia_semana: DiaSemana; hora_inicio: string; hora_fin: string } | null = null;
+      let mejorPicoLocal = picoLocal;
+      let mejorPicoCelula = picoCelula;
+      let mejorDistancia = Number.POSITIVE_INFINITY;
+      for (const candidato of candidatosRefinamiento(clase)) {
+        if (
+          candidato.dia_semana === clase.dia_semana &&
+          candidato.hora_inicio === clase.hora_inicio &&
+          candidato.hora_fin === clase.hora_fin
+        ) continue;
+        if (solapesGrupoRefinamiento(clase, candidato) > 0) continue;
+
+        const overrides = new Map<ClaseGenerada, HorarioRefinamiento>([[clase, candidato]]);
+        const nuevoPicoLocal = maxConcurrenciaRefinamiento(
+          clasesMismaSedeDepartamento(clase),
+          overrides
+        );
+        const nuevoPicoCelula = maxConcurrenciaRefinamiento(
+          clasesMismaCelulaDepartamento(clase),
+          overrides
+        );
+        if (nuevoPicoLocal > picoLocal || nuevoPicoCelula > picoCelula) continue;
+        if (nuevoPicoLocal === picoLocal && nuevoPicoCelula >= picoCelula) continue;
+
+        const distancia = Math.abs(toMinutes(candidato.hora_inicio) - toMinutes(clase.hora_inicio));
+        const mejora =
+          nuevoPicoLocal < mejorPicoLocal ||
+          (nuevoPicoLocal === mejorPicoLocal && nuevoPicoCelula < mejorPicoCelula) ||
+          (nuevoPicoLocal === mejorPicoLocal && nuevoPicoCelula === mejorPicoCelula && distancia < mejorDistancia);
+        if (mejora) {
+          mejorPicoLocal = nuevoPicoLocal;
+          mejorPicoCelula = nuevoPicoCelula;
+          mejorDistancia = distancia;
+          mejorHorario = candidato;
+        }
+      }
+      if (mejorHorario && (mejorPicoLocal < picoLocal || mejorPicoCelula < picoCelula)) {
+        clase.dia_semana = mejorHorario.dia_semana;
+        clase.hora_inicio = mejorHorario.hora_inicio;
+        clase.hora_fin = mejorHorario.hora_fin;
+        movimientos++;
+        continue;
+      }
+
+      let mejorSwap: {
+        otra: ClaseGenerada;
+        horarioClase: HorarioRefinamiento;
+        horarioOtra: HorarioRefinamiento;
+        picoLocal: number;
+        picoCelula: number;
+        distancia: number;
+      } | null = null;
+      const duracionOtraEnOriginal = (otra: ClaseGenerada): HorarioRefinamiento | null => {
+        const inicioOriginal = toMinutes(clase.hora_inicio);
+        const duracionOtra = toMinutes(otra.hora_fin) - toMinutes(otra.hora_inicio);
+        const finOtra = inicioOriginal + duracionOtra;
+        const cabe = clase.contexto.franjasSede.some(franja =>
+          franja.dia_semana === clase.dia_semana &&
+          toMinutes(franja.hora_inicio) <= inicioOriginal &&
+          finOtra <= toMinutes(franja.hora_fin)
+        );
+        if (!cabe) return null;
+        return {
+          dia_semana: clase.dia_semana,
+          hora_inicio: clase.hora_inicio,
+          hora_fin: toTime(finOtra),
+        };
+      };
+
+      const bloqueadoras = clasesGeneradas
+        .filter(otra =>
+          otra !== clase &&
+          otra.contexto.sede.id === clase.contexto.sede.id &&
+          otra.calendario === clase.calendario &&
+          otra.departamento !== clase.departamento &&
+          !esDepartamentoDominante(otra)
+        )
+        .sort((a, b) =>
+          Math.abs(toMinutes(a.hora_inicio) - toMinutes(clase.hora_inicio)) -
+          Math.abs(toMinutes(b.hora_inicio) - toMinutes(clase.hora_inicio))
+        );
+
+      for (const otra of bloqueadoras) {
+        const candidatosClaseLiberados = candidatosRefinamiento(clase).filter(candidato =>
+          bloqueSolapa(candidato, otra) ||
+          Math.abs(toMinutes(candidato.hora_inicio) - toMinutes(otra.hora_inicio)) <= 60
+        );
+        for (const horarioClase of candidatosClaseLiberados) {
+          for (const horarioOtra of candidatosRefinamiento(otra)) {
+            if (
+              horarioOtra.dia_semana === otra.dia_semana &&
+              horarioOtra.hora_inicio === otra.hora_inicio &&
+              horarioOtra.hora_fin === otra.hora_fin
+            ) continue;
+
+            const overrides = new Map<ClaseGenerada, HorarioRefinamiento>([
+              [clase, horarioClase],
+              [otra, horarioOtra],
+            ]);
+            if (solapesGrupoRefinamiento(clase, horarioClase, overrides) > 0) continue;
+            if (solapesGrupoRefinamiento(otra, horarioOtra, overrides) > 0) continue;
+
+            const nuevoPicoLocal = maxConcurrenciaRefinamiento(clasesMismaSedeDepartamento(clase), overrides);
+            const nuevoPicoCelula = maxConcurrenciaRefinamiento(clasesMismaCelulaDepartamento(clase), overrides);
+            const picoLocalOtra = maxConcurrenciaRefinamiento(clasesMismaSedeDepartamento(otra));
+            const picoCelulaOtra = maxConcurrenciaRefinamiento(clasesMismaCelulaDepartamento(otra));
+            const nuevoPicoLocalOtra = maxConcurrenciaRefinamiento(clasesMismaSedeDepartamento(otra), overrides);
+            const nuevoPicoCelulaOtra = maxConcurrenciaRefinamiento(clasesMismaCelulaDepartamento(otra), overrides);
+            if (nuevoPicoLocal > picoLocal || nuevoPicoCelula > picoCelula) continue;
+            if (nuevoPicoLocalOtra > picoLocalOtra || nuevoPicoCelulaOtra > picoCelulaOtra) continue;
+            if (nuevoPicoLocal === picoLocal && nuevoPicoCelula >= picoCelula) continue;
+
+            const distancia =
+              Math.abs(toMinutes(horarioClase.hora_inicio) - toMinutes(clase.hora_inicio)) +
+              Math.abs(toMinutes(horarioOtra.hora_inicio) - toMinutes(otra.hora_inicio));
+            const mejora =
+              !mejorSwap ||
+              nuevoPicoLocal < mejorSwap.picoLocal ||
+              (nuevoPicoLocal === mejorSwap.picoLocal && nuevoPicoCelula < mejorSwap.picoCelula) ||
+              (nuevoPicoLocal === mejorSwap.picoLocal && nuevoPicoCelula === mejorSwap.picoCelula && distancia < mejorSwap.distancia);
+            if (mejora) {
+              mejorSwap = { otra, horarioClase, horarioOtra, picoLocal: nuevoPicoLocal, picoCelula: nuevoPicoCelula, distancia };
+            }
+          }
+        }
+        if (mejorSwap) continue;
+
+        const horarioOtra = duracionOtraEnOriginal(otra);
+        if (!horarioOtra) continue;
+        const candidatosClase = candidatosRefinamiento(clase).filter(candidato =>
+          bloqueSolapa(candidato, otra) ||
+          Math.abs(toMinutes(candidato.hora_inicio) - toMinutes(otra.hora_inicio)) <= 60
+        );
+
+        for (const horarioClase of candidatosClase) {
+          const overrides = new Map<ClaseGenerada, HorarioRefinamiento>([
+            [clase, horarioClase],
+            [otra, horarioOtra],
+          ]);
+          if (solapesGrupoRefinamiento(clase, horarioClase, overrides) > 0) continue;
+          if (solapesGrupoRefinamiento(otra, horarioOtra, overrides) > 0) continue;
+
+          const nuevoPicoLocal = maxConcurrenciaRefinamiento(clasesMismaSedeDepartamento(clase), overrides);
+          const nuevoPicoCelula = maxConcurrenciaRefinamiento(clasesMismaCelulaDepartamento(clase), overrides);
+          const picoLocalOtra = maxConcurrenciaRefinamiento(clasesMismaSedeDepartamento(otra));
+          const picoCelulaOtra = maxConcurrenciaRefinamiento(clasesMismaCelulaDepartamento(otra));
+          const nuevoPicoLocalOtra = maxConcurrenciaRefinamiento(clasesMismaSedeDepartamento(otra), overrides);
+          const nuevoPicoCelulaOtra = maxConcurrenciaRefinamiento(clasesMismaCelulaDepartamento(otra), overrides);
+          if (nuevoPicoLocal > picoLocal || nuevoPicoCelula > picoCelula) continue;
+          if (nuevoPicoLocalOtra > picoLocalOtra || nuevoPicoCelulaOtra > picoCelulaOtra) continue;
+          if (nuevoPicoLocal === picoLocal && nuevoPicoCelula >= picoCelula) continue;
+
+          const distancia =
+            Math.abs(toMinutes(horarioClase.hora_inicio) - toMinutes(clase.hora_inicio)) +
+            Math.abs(toMinutes(horarioOtra.hora_inicio) - toMinutes(otra.hora_inicio));
+          const mejora =
+            !mejorSwap ||
+            nuevoPicoLocal < mejorSwap.picoLocal ||
+            (nuevoPicoLocal === mejorSwap.picoLocal && nuevoPicoCelula < mejorSwap.picoCelula) ||
+            (nuevoPicoLocal === mejorSwap.picoLocal && nuevoPicoCelula === mejorSwap.picoCelula && distancia < mejorSwap.distancia);
+          if (mejora) {
+            mejorSwap = { otra, horarioClase, horarioOtra, picoLocal: nuevoPicoLocal, picoCelula: nuevoPicoCelula, distancia };
+          }
+        }
+      }
+
+      if (!mejorSwap) continue;
+      clase.dia_semana = mejorSwap.horarioClase.dia_semana;
+      clase.hora_inicio = mejorSwap.horarioClase.hora_inicio;
+      clase.hora_fin = mejorSwap.horarioClase.hora_fin;
+      mejorSwap.otra.dia_semana = mejorSwap.horarioOtra.dia_semana;
+      mejorSwap.otra.hora_inicio = mejorSwap.horarioOtra.hora_inicio;
+      mejorSwap.otra.hora_fin = mejorSwap.horarioOtra.hora_fin;
+      movimientos++;
+    }
+    if (movimientos === 0) break;
+  }
+
   try {
+    const statements: D1PreparedStatement[] = clasesGeneradas.map(clase => {
+      const sede = clase.contexto.sede;
+      const id = buildClaseId({
+        periodo,
+        programaId,
+        sedeId: sede.id,
+        semestre: clase.semestre,
+        grupo: clase.grupo,
+        materiaId: clase.materia.id,
+        calendario: clase.calendario,
+        diaSemana: clase.dia_semana,
+        horaInicio: clase.hora_inicio,
+        horaFin: clase.hora_fin,
+      });
+      return db.prepare(`
+        INSERT INTO clases (id, periodo, programa_id, materia_id, sede_id, grupo, calendario, dia_semana, hora_inicio, hora_fin, proyeccion_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        id,
+        periodo,
+        programaId,
+        clase.materia.id,
+        sede.id,
+        clase.grupo,
+        clase.calendario,
+        clase.dia_semana,
+        clase.hora_inicio,
+        clase.hora_fin,
+        clase.proyeccionId
+      );
+    });
     for (let i = 0; i < statements.length; i += 50) {
       await db.batch(statements.slice(i, i + 50));
     }

@@ -248,6 +248,7 @@ export function Clases() {
     () => sedesProyectadasGenerador.filter(s => generatorForm.sede_ids.includes(s.id)),
     [sedesProyectadasGenerador, generatorForm.sede_ids]
   );
+  const tieneFiltrosParaBorrar = Boolean(programaFiltro || celulaFiltro || sedeFiltro || semestreFiltro);
 
   const templateOptions = useMemo(
     () => claseTemplatesList.map(template => ({
@@ -599,6 +600,10 @@ export function Clases() {
       notifications.show({ message: 'Selecciona un periodo de trabajo', color: 'red' });
       return;
     }
+    if (!tieneFiltrosParaBorrar) {
+      notifications.show({ message: 'Selecciona al menos un filtro antes de borrar clases', color: 'orange' });
+      return;
+    }
     if (!(await confirm({
       title: 'Borrar clases filtradas',
       message: 'Se eliminarán las clases que coincidan con los filtros actuales y también sus asignaciones asociadas.',
@@ -716,15 +721,23 @@ export function Clases() {
           <Button leftSection={<Wand2 size={16} />} color="brand" onClick={openGenerator}>
             Generar clases
           </Button>
-          <Button
-            leftSection={<Trash2 size={16} />}
-            variant="light"
-            color="red"
-            onClick={handleBulkDelete}
-            loading={bulkDeleteClases.isPending}
+          <Tooltip
+            label="Selecciona al menos un filtro para borrar clases"
+            disabled={tieneFiltrosParaBorrar}
           >
-            Borrar filtradas
-          </Button>
+            <span>
+              <Button
+                leftSection={<Trash2 size={16} />}
+                variant="light"
+                color="red"
+                onClick={handleBulkDelete}
+                loading={bulkDeleteClases.isPending}
+                disabled={!tieneFiltrosParaBorrar}
+              >
+                Borrar filtradas
+              </Button>
+            </span>
+          </Tooltip>
           <Button leftSection={<CalendarPlus size={16} />} variant="light" color="brand" onClick={open}>
             Nueva clase
           </Button>
