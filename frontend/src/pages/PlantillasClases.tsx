@@ -4,7 +4,6 @@ import {
   Badge,
   Button,
   Group,
-  Modal,
   MultiSelect,
   NumberInput,
   Paper,
@@ -16,9 +15,8 @@ import {
   Title,
   Tooltip,
 } from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
-import { CalendarPlus, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, CalendarPlus, Pencil, Plus, Trash2 } from 'lucide-react';
 import {
   useClaseTemplates,
   useCreateClaseTemplate,
@@ -105,7 +103,7 @@ export function PlantillasClases() {
   const createTemplate = useCreateClaseTemplate();
   const updateTemplate = useUpdateClaseTemplate();
   const deleteTemplate = useDeleteClaseTemplate();
-  const [opened, { open, close }] = useDisclosure(false);
+  const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<TemplateForm>(defaultForm());
   const templatesList = Array.isArray(templates) ? templates as ClaseTemplate[] : [];
   const programasList = Array.isArray(programas) ? programas as Programa[] : [];
@@ -125,7 +123,7 @@ export function PlantillasClases() {
 
   const openCreate = () => {
     setForm(defaultForm(programaFiltro));
-    open();
+    setEditing(true);
   };
 
   const openEdit = (template: ClaseTemplate) => {
@@ -142,7 +140,12 @@ export function PlantillasClases() {
         : diasConfigDesdeLegacy(diasSemana, jornadas),
       semestres: Array.isArray(template.semestres) && template.semestres.length > 0 ? template.semestres : [{ semestre: 1, grupos: 1 }],
     });
-    open();
+    setEditing(true);
+  };
+
+  const closeEditor = () => {
+    setEditing(false);
+    setForm(defaultForm(programaFiltro));
   };
 
   const setDiasSemana = (dias: string[]) => {
@@ -242,7 +245,7 @@ export function PlantillasClases() {
         await createTemplate.mutateAsync(payload);
         notifications.show({ message: 'Plantilla creada', color: 'green' });
       }
-      close();
+      closeEditor();
     } catch (e: any) {
       notifications.show({ message: e.response?.data?.error || 'Error al guardar plantilla', color: 'red' });
     }
@@ -270,11 +273,19 @@ export function PlantillasClases() {
           <Title order={2}>Plantillas de clases</Title>
           <Text size="sm" c="dimmed">Patrones reutilizables para generar clases por sede</Text>
         </div>
-        <Button leftSection={<CalendarPlus size={16} />} color="brand" onClick={openCreate}>
-          Nueva plantilla
-        </Button>
+        {editing ? (
+          <Button leftSection={<ArrowLeft size={16} />} variant="light" onClick={closeEditor}>
+            Volver al listado
+          </Button>
+        ) : (
+          <Button leftSection={<CalendarPlus size={16} />} color="brand" onClick={openCreate}>
+            Nueva plantilla
+          </Button>
+        )}
       </Group>
 
+      {!editing && (
+        <>
       <Paper p="md" radius="md" withBorder>
         <Select
           label="Programa"
@@ -369,13 +380,20 @@ export function PlantillasClases() {
         </Paper>
       )}
 
-      <Modal
-        opened={opened}
-        onClose={close}
-        title={form.id ? 'Editar plantilla' : 'Nueva plantilla'}
-        size="xl"
-        styles={{ content: { overflow: 'hidden' }, body: { maxHeight: 'calc(100dvh - 140px)', overflowY: 'auto' } }}
-      >
+        </>
+      )}
+
+      {editing && (
+      <Paper p="md" radius="md" withBorder>
+        <Group justify="space-between" mb="md">
+          <div>
+            <Text fw={700}>{form.id ? 'Editar plantilla' : 'Nueva plantilla'}</Text>
+            <Text size="sm" c="dimmed">Configura dias, jornadas, descansos y oferta por semestre.</Text>
+          </div>
+          <Button variant="subtle" leftSection={<ArrowLeft size={16} />} onClick={closeEditor}>
+            Volver
+          </Button>
+        </Group>
         <Stack gap="md">
           <TextInput
             label="Nombre"
@@ -499,13 +517,14 @@ export function PlantillasClases() {
           </Paper>
 
           <Group justify="flex-end">
-            <Button variant="light" onClick={close}>Cancelar</Button>
+            <Button variant="light" onClick={closeEditor}>Cancelar</Button>
             <Button color="brand" onClick={handleSave} loading={createTemplate.isPending || updateTemplate.isPending}>
               Guardar plantilla
             </Button>
           </Group>
         </Stack>
-      </Modal>
+      </Paper>
+      )}
     </Stack>
   );
 }

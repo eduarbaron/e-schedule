@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { Bindings } from '../types';
+import { ensureClaseProyeccionesSchema } from '../utils/proyeccionesSchema';
 
 const clases = new Hono<{ Bindings: Bindings }>();
 
@@ -45,6 +46,20 @@ type ClaseTemplate = {
   created_at: string;
 };
 
+type ClaseProyeccionRow = {
+  id: string;
+  periodo: string;
+  programa_id: string;
+  celula_id: string | null;
+  sede_id: string;
+  template_id: string | null;
+  semestre: number;
+  grupos: number;
+  dias_semana_json: string;
+  jornadas_json: string;
+  dias_config_json: string;
+};
+
 type SedeTemplateInput = {
   sede_id: string;
   template_id: string;
@@ -77,6 +92,8 @@ type HorarioCompactado = {
   };
   laneIndex: number;
 };
+
+type CostoHorario = (bloque: BloqueHorarioGenerado) => number;
 
 const DIAS_VALIDOS = ['L', 'M', 'X', 'J', 'V', 'S'];
 
@@ -327,7 +344,8 @@ function buscarHorarioCompactado(
   horas: number,
   calendario: CalendarioClase,
   bloquesGrupo: BloqueHorarioGenerado[],
-  bandaPreferida?: number
+  bandaPreferida?: number,
+  costoExterno?: CostoHorario
 ): HorarioCompactado | null {
   const candidatos: Array<{
     horario: { dia_semana: DiaSemana; hora_inicio: string; hora_fin: string };
@@ -336,19 +354,26 @@ function buscarHorarioCompactado(
     nuevoLane: boolean;
     costo: number;
   }> = [];
-
-  for (let laneIndex = 0; laneIndex < lanes.length; laneIndex++) {
-    const cursorPrueba = clonarCursor(lanes[laneIndex]);
-    const horario = siguienteHorarioSinChoqueGrupo(cursorPrueba, jornadas, horas, calendario, bloquesGrupo);
-    if (horario) {
+  const maxCandidatosPorLane = costoExterno ? 8 : 1;
+  const agregarCandidatos = (cursorInicial: CursorHorario, laneIndex: number, nuevoLane: boolean) => {
+    let cursorPrueba = clonarCursor(cursorInicial);
+    for (let intento = 0; intento < maxCandidatosPorLane; intento++) {
+      const horario = siguienteHorarioSinChoqueGrupo(cursorPrueba, jornadas, horas, calendario, bloquesGrupo);
+      if (!horario) break;
+      const bloque = { ...horario, calendario };
       candidatos.push({
         horario,
-        cursor: cursorPrueba,
+        cursor: clonarCursor(cursorPrueba),
         laneIndex,
-        nuevoLane: false,
-        costo: costoCompactacionGrupo({ ...horario, calendario }, bloquesGrupo),
+        nuevoLane,
+        costo: costoCompactacionGrupo(bloque, bloquesGrupo) + (costoExterno?.(bloque) ?? 0),
       });
+      cursorPrueba = clonarCursor(cursorPrueba);
     }
+  };
+
+  for (let laneIndex = 0; laneIndex < lanes.length; laneIndex++) {
+    agregarCandidatos(lanes[laneIndex], laneIndex, false);
   }
 
   if (candidatos.length === 0) {
@@ -357,17 +382,8 @@ function buscarHorarioCompactado(
       : [crearCursorDesdeBanda(jornadas, bandaPreferida), crearCursor(jornadas)];
 
     for (const nuevoCursor of cursoresIniciales) {
-      const horario = siguienteHorarioSinChoqueGrupo(nuevoCursor, jornadas, horas, calendario, bloquesGrupo);
-      if (horario) {
-        candidatos.push({
-          horario,
-          cursor: nuevoCursor,
-          laneIndex: lanes.length,
-          nuevoLane: true,
-          costo: costoCompactacionGrupo({ ...horario, calendario }, bloquesGrupo),
-        });
-        break;
-      }
+      agregarCandidatos(nuevoCursor, lanes.length, true);
+      if (candidatos.length > 0) break;
     }
   }
 
@@ -436,6 +452,95 @@ function ordenarUnidadesDepartamento<T extends { semestre: number; grupo: number
     Number(b.materia.horas_semana) - Number(a.materia.horas_semana) ||
     String(a.materia.nombre).localeCompare(String(b.materia.nombre))
   );
+}
+
+function asignarBanda(
+  bandas: Map<string, Map<string, number>>,
+  sedeId: string,
+  departamento: string,
+  banda: number
+) {
+  if (!bandas.has(sedeId)) bandas.set(sedeId, new Map());
+  bandas.get(sedeId)!.set(departamento, banda);
+}
+
+function calcularBandasPorCelulaDepartamento(
+  sedes: any[],
+  proyeccionesPorSede: Map<string, ClaseProyeccionRow[]>,
+  materias: any[]
+) {
+  const bandas = new Map<string, Map<string, number>>();
+  const sedesPorCelula = new Map<string, any[]>();
+  const bandasComplementarias = [0, 2, 1];
+
+  sedes.forEach(sede => {
+    const celulaKey = sede.celula_id ?? '__sin_celula__';
+    if (!sedesPorCelula.has(celulaKey)) sedesPorCelula.set(celulaKey, []);
+    sedesPorCelula.get(celulaKey)!.push(sede);
+  });
+
+  for (const [celulaKey, sedesCelula] of sedesPorCelula.entries()) {
+    const cargasDepartamento = new Map<string, { total: number; porSede: Map<string, number> }>();
+
+    for (const sede of sedesCelula) {
+      const proyeccionesSede = proyeccionesPorSede.get(sede.id) ?? [];
+      for (const proyeccion of proyeccionesSede) {
+        const materiasSemestre = materias.filter(m => Number(m.semestre) === Number(proyeccion.semestre));
+        for (const materia of materiasSemestre) {
+          const departamento = departamentoKey(materia);
+          const grupos = Math.max(0, Number(proyeccion.grupos ?? 0));
+          if (!cargasDepartamento.has(departamento)) {
+            cargasDepartamento.set(departamento, { total: 0, porSede: new Map() });
+          }
+          const carga = cargasDepartamento.get(departamento)!;
+          carga.total += grupos;
+          carga.porSede.set(sede.id, (carga.porSede.get(sede.id) ?? 0) + grupos);
+        }
+      }
+    }
+
+    const cargasOrdenadas = [...cargasDepartamento.entries()]
+      .sort(([depA, cargaA], [depB, cargaB]) => cargaB.total - cargaA.total || depA.localeCompare(depB));
+    const mayorCarga = cargasOrdenadas[0]?.[1].total ?? 0;
+    const umbralBajaCarga = Math.max(2, Math.ceil(mayorCarga * 0.35));
+
+    cargasOrdenadas.forEach(([departamento, carga], departamentoIndex) => {
+      const sedesDepartamento = [...carga.porSede.entries()]
+        .sort(([sedeA, cargaA], [sedeB, cargaB]) => cargaB - cargaA || sedeA.localeCompare(sedeB));
+      const esBajaCarga = carga.total <= umbralBajaCarga;
+
+      if (esBajaCarga && sedesDepartamento.length < 2) return;
+
+      sedesDepartamento.forEach(([sedeId], sedeIndex) => {
+        const offsetCelula = Math.abs(hashSimple(celulaKey)) % bandasComplementarias.length;
+        const banda = bandasComplementarias[(sedeIndex + departamentoIndex + offsetCelula) % bandasComplementarias.length];
+        asignarBanda(bandas, sedeId, departamento, banda);
+      });
+    });
+  }
+
+  return bandas;
+}
+
+function hashSimple(value: string) {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) {
+    hash = ((hash << 5) - hash) + value.charCodeAt(i);
+    hash |= 0;
+  }
+  return hash;
+}
+
+function ocupacionKey(celulaId: string | null | undefined, departamento: string, calendario: CalendarioClase) {
+  return `${celulaId ?? '__sin_celula__'}|${departamento}|${calendario}`;
+}
+
+function contarSolapesCelulaDepartamento(bloque: BloqueHorarioGenerado, bloques: BloqueHorarioGenerado[]) {
+  return bloques.filter(existing =>
+    existing.dia_semana === bloque.dia_semana &&
+    toMinutes(bloque.hora_inicio) < toMinutes(existing.hora_fin) &&
+    toMinutes(existing.hora_inicio) < toMinutes(bloque.hora_fin)
+  ).length;
 }
 
 function normalizarSemestresGeneracion(
@@ -626,7 +731,7 @@ clases.delete('/templates/:id', async (c) => {
 });
 
 clases.get('/', async (c) => {
-  const { periodo, programa_id, sede_id, semestre, estado } = c.req.query();
+  const { periodo, programa_id, celula_id, sede_id, semestre, estado } = c.req.query();
   let query = `${CLASE_SELECT} WHERE 1=1`;
   const params: string[] = [];
 
@@ -637,6 +742,10 @@ clases.get('/', async (c) => {
   if (programa_id) {
     query += ' AND cl.programa_id = ?';
     params.push(programa_id);
+  }
+  if (celula_id) {
+    query += ' AND s.celula_id = ?';
+    params.push(celula_id);
   }
   if (sede_id) {
     query += ' AND cl.sede_id = ?';
@@ -658,7 +767,7 @@ clases.get('/', async (c) => {
 
 async function deleteClasesPorFiltro(
   db: D1Database,
-  filtro: { periodo?: string; programa_id?: string; sede_ids?: string[]; semestre?: string }
+  filtro: { periodo?: string; programa_id?: string; celula_id?: string; sede_ids?: string[]; semestre?: string }
 ) {
   let where = 'WHERE 1=1';
   const params: any[] = [];
@@ -669,6 +778,10 @@ async function deleteClasesPorFiltro(
   if (filtro.programa_id) {
     where += ' AND cl.programa_id = ?';
     params.push(filtro.programa_id);
+  }
+  if (filtro.celula_id) {
+    where += ' AND s.celula_id = ?';
+    params.push(filtro.celula_id);
   }
   if (filtro.sede_ids && filtro.sede_ids.length > 0) {
     where += ` AND cl.sede_id IN (${filtro.sede_ids.map(() => '?').join(',')})`;
@@ -744,6 +857,7 @@ async function deleteClasesPorFiltro(
 
 clases.post('/generar', async (c) => {
   const db = c.env.e_schedule_db;
+  await ensureClaseProyeccionesSchema(db);
   const body = await c.req.json();
   const periodo = String(body.periodo ?? '');
   const programaId = String(body.programa_id ?? '');
@@ -761,10 +875,6 @@ clases.post('/generar', async (c) => {
   const sedeIdsSolicitadas = Array.isArray(body.sede_ids) ? body.sede_ids.map(String).filter(Boolean) : [];
 
   if (!periodo || !programaId) return c.json({ error: 'periodo y programa_id son requeridos' }, 400);
-  if ((diasSemana.length === 0 || jornadas.length === 0) && sedeTemplates.length === 0) {
-    return c.json({ error: 'Define días y jornadas válidas o usa plantillas por sede' }, 400);
-  }
-
   const programa = await db.prepare('SELECT id, nombre, tipo_ciclo FROM programas WHERE id = ?')
     .bind(programaId)
     .first<{ id: string; nombre: string; tipo_ciclo: 'semanal' | 'quincenal' }>();
@@ -795,6 +905,32 @@ clases.post('/generar', async (c) => {
   const sedes = sedesResult.results;
   if (sedes.length === 0) return c.json({ error: 'El programa no tiene sedes ofertadas para generar clases' }, 400);
 
+  const proyeccionesResult = await db.prepare(`
+    SELECT *
+    FROM clase_proyecciones
+    WHERE periodo = ?
+      AND programa_id = ?
+      AND estado != 'archivada'
+      ${sedeIdsSolicitadas.length > 0 ? `AND sede_id IN (${sedeIdsSolicitadas.map(() => '?').join(',')})` : ''}
+    ORDER BY sede_id, semestre
+  `).bind(periodo, programaId, ...sedeIdsSolicitadas).all<ClaseProyeccionRow>();
+  const proyecciones = proyeccionesResult.results;
+  if (proyecciones.length === 0) {
+    return c.json({
+      error: 'No hay proyecciones para este periodo y programa. Crea primero la proyección de clases.',
+    }, 400);
+  }
+
+  const proyeccionesPorSede = new Map<string, ClaseProyeccionRow[]>();
+  for (const proyeccion of proyecciones) {
+    if (!proyeccionesPorSede.has(proyeccion.sede_id)) proyeccionesPorSede.set(proyeccion.sede_id, []);
+    proyeccionesPorSede.get(proyeccion.sede_id)!.push(proyeccion);
+  }
+  const sedesConProyeccion = sedes.filter(sede => proyeccionesPorSede.has(sede.id));
+  if (sedesConProyeccion.length === 0) {
+    return c.json({ error: 'Las sedes seleccionadas no tienen proyección de clases para este programa.' }, 400);
+  }
+
   const templateIds: string[] = [...new Set(sedeTemplates.map((item: SedeTemplateInput) => item.template_id))];
   const templatesPorId = new Map<string, ClaseTemplate>();
   if (templateIds.length > 0) {
@@ -812,15 +948,40 @@ clases.post('/generar', async (c) => {
   );
 
   if (reemplazarExistentes) {
-    await deleteClasesPorFiltro(db, { periodo, programa_id: programaId, sede_ids: sedes.map(s => s.id) });
+    await deleteClasesPorFiltro(db, { periodo, programa_id: programaId, sede_ids: sedesConProyeccion.map(s => s.id) });
   }
 
   const statements: D1PreparedStatement[] = [];
   const errores: string[] = [];
   let clasesCreadas = 0;
   const semestresPrograma = [...new Set(materias.map(m => Number(m.semestre)).filter(Number.isFinite))].sort((a, b) => a - b);
+  const bandasPorSedeDepartamento = calcularBandasPorCelulaDepartamento(sedesConProyeccion, proyeccionesPorSede, materias);
+  const ocupacionPorCelulaDepartamento = new Map<string, BloqueHorarioGenerado[]>();
 
-  for (const [sedeIndex, sede] of sedes.entries()) {
+  type UnidadClaseGeneracion = {
+    semestre: number;
+    grupo: number;
+    materia: any;
+  };
+  type SedeGeneracionContext = {
+    sedeIndex: number;
+    sede: any;
+    proyeccionesSede: ClaseProyeccionRow[];
+    franjasSede: FranjaGeneracion[];
+    capacidadHoras: number;
+    unidadesPorDepartamento: Map<string, UnidadClaseGeneracion[]>;
+    departamentosOrdenados: Array<[string, UnidadClaseGeneracion[]]>;
+    mayorCargaDepartamento: number;
+    umbralBajaCarga: number;
+    rotacionBajaCarga: number;
+    horasUsadasPorGrupo: Map<string, Record<'A' | 'B', number>>;
+    horariosPorGrupo: Map<string, BloqueHorarioGenerado[]>;
+    lanesPorDepartamentoCalendario: Map<string, CursorHorario[]>;
+    bandasDepartamentoSede: Map<string, number>;
+  };
+  const contextosSede: SedeGeneracionContext[] = [];
+
+  for (const [sedeIndex, sede] of sedesConProyeccion.entries()) {
     const configSede: ConfiguracionSedeGeneracion = configuracionSedes[sede.id] ?? {};
     const templateSede = templatePorSede.get(sede.id);
     const diasSede = normalizarDias(configSede.dias_semana).length > 0
@@ -844,11 +1005,26 @@ clases.post('/generar', async (c) => {
     const semestresLegacy = Array.isArray(semestresPorSede[sede.id])
       ? (semestresPorSede[sede.id] as unknown[]).map(semestre => ({ semestre, grupos: gruposPorSemestre }))
       : undefined;
-    const semestres = normalizarSemestresGeneracion(configSede.semestres ?? templateSede?.semestres ?? semestresLegacy, semestresPrograma, gruposPorSemestre);
-    const franjasSede = expandirFranjasDesdeDiasConfig(diasConfigSede);
+    const proyeccionesSede = proyeccionesPorSede.get(sede.id) ?? [];
+    const primeraProyeccion = proyeccionesSede[0];
+    const diasConfigProyeccion = primeraProyeccion ? normalizarDiasConfig(parseJsonArray(primeraProyeccion.dias_config_json)) : [];
+    const diasSemanaProyeccion = primeraProyeccion ? normalizarDias(parseJsonArray(primeraProyeccion.dias_semana_json)) : [];
+    const jornadasProyeccion = primeraProyeccion ? normalizarJornadas(parseJsonArray(primeraProyeccion.jornadas_json)) : [];
+    const semestresProyeccion = proyeccionesSede.map(proyeccion => ({ semestre: proyeccion.semestre, grupos: proyeccion.grupos }));
+    const semestres = normalizarSemestresGeneracion(
+      semestresProyeccion.length > 0 ? semestresProyeccion : configSede.semestres ?? templateSede?.semestres ?? semestresLegacy,
+      semestresPrograma,
+      gruposPorSemestre
+    );
+    const diasConfigFinal = diasConfigProyeccion.length > 0 ? diasConfigProyeccion : diasConfigSede;
+    const diasSedeFinal = diasSemanaProyeccion.length > 0 ? diasSemanaProyeccion : diasSede;
+    const jornadasSedeFinal = jornadasProyeccion.length > 0 ? jornadasProyeccion : jornadasSede;
+    const franjasSede = expandirFranjasDesdeDiasConfig(
+      diasConfigFinal.length > 0 ? diasConfigFinal : diasConfigDesdeLegacy(diasSedeFinal, jornadasSedeFinal)
+    );
     const capacidadHoras = totalMinutosJornadas(franjasSede) / 60;
 
-    if (diasConfigSede.length === 0) {
+    if (diasConfigFinal.length === 0 && (diasSedeFinal.length === 0 || jornadasSedeFinal.length === 0)) {
       errores.push(`Selecciona al menos un día para ${sede.nombre}`);
       continue;
     }
@@ -857,15 +1033,7 @@ clases.post('/generar', async (c) => {
       continue;
     }
 
-    type UnidadClaseGeneracion = {
-      semestre: number;
-      grupo: number;
-      materia: any;
-    };
     const unidadesPorDepartamento = new Map<string, UnidadClaseGeneracion[]>();
-    const horasUsadasPorGrupo = new Map<string, Record<'A' | 'B', number>>();
-    const horariosPorGrupo = new Map<string, BloqueHorarioGenerado[]>();
-    const lanesPorDepartamentoCalendario = new Map<string, CursorHorario[]>();
 
     for (const semestreConfig of semestres) {
       const { semestre, grupos } = semestreConfig;
@@ -890,72 +1058,129 @@ clases.post('/generar', async (c) => {
       );
     const mayorCargaDepartamento = departamentosOrdenados[0]?.[1].length ?? 0;
     const umbralBajaCarga = Math.max(2, Math.ceil(mayorCargaDepartamento * 0.35));
-    let rotacionBajaCarga = sedeIndex % 3;
 
-    for (const [departamento, unidadesDepartamento] of departamentosOrdenados) {
-      const esDepartamentoBajaCarga = unidadesDepartamento.length <= umbralBajaCarga;
+    contextosSede.push({
+      sedeIndex,
+      sede,
+      proyeccionesSede,
+      franjasSede,
+      capacidadHoras,
+      unidadesPorDepartamento,
+      departamentosOrdenados,
+      mayorCargaDepartamento,
+      umbralBajaCarga,
+      rotacionBajaCarga: sedeIndex % 3,
+      horasUsadasPorGrupo: new Map(),
+      horariosPorGrupo: new Map(),
+      lanesPorDepartamentoCalendario: new Map(),
+      bandasDepartamentoSede: bandasPorSedeDepartamento.get(sede.id) ?? new Map<string, number>(),
+    });
+  }
+
+  const programarUnidad = (
+    contexto: SedeGeneracionContext,
+    departamento: string,
+    unidadesDepartamento: UnidadClaseGeneracion[],
+    unidad: UnidadClaseGeneracion,
+    fase: 'sede' | 'celula'
+  ) => {
+    const { sede, sedeIndex } = contexto;
+    const { semestre, grupo, materia } = unidad;
+    const proyeccionClase = contexto.proyeccionesSede.find(proyeccion => proyeccion.semestre === semestre);
+    const horas = Number(materia.horas_semana);
+    const grupoKey = `${semestre}|${grupo}`;
+    if (!contexto.horasUsadasPorGrupo.has(grupoKey)) contexto.horasUsadasPorGrupo.set(grupoKey, { A: 0, B: 0 });
+    if (!contexto.horariosPorGrupo.has(grupoKey)) contexto.horariosPorGrupo.set(grupoKey, []);
+    const horasUsadas = contexto.horasUsadasPorGrupo.get(grupoKey)!;
+    const horariosGrupo = contexto.horariosPorGrupo.get(grupoKey)!;
+    const preferida: 'A' | 'B' = (sedeIndex + semestre + grupo) % 2 === 0 ? 'A' : 'B';
+    const calendariosAProbar: CalendarioClase[] = programa.tipo_ciclo === 'semanal'
+      ? ['semanal']
+      : ordenarCalendariosDisponibles(horasUsadas, horas, contexto.capacidadHoras, preferida);
+    if (calendariosAProbar.length === 0) {
+      errores.push(`No hay cupo para ${materia.nombre} en ${sede.nombre}, semestre ${semestre}, grupo ${grupo}`);
+      return;
+    }
+
+    const esDepartamentoBajaCarga = unidadesDepartamento.length <= contexto.umbralBajaCarga;
+    const bandaCelular = contexto.bandasDepartamentoSede.get(departamento);
+    let calendario: CalendarioClase | null = null;
+    let horario: { dia_semana: DiaSemana; hora_inicio: string; hora_fin: string } | null = null;
+
+    for (const calendarioCandidato of calendariosAProbar) {
+      const lanesKey = `${departamento}|${calendarioCandidato}`;
+      if (!contexto.lanesPorDepartamentoCalendario.has(lanesKey)) contexto.lanesPorDepartamentoCalendario.set(lanesKey, []);
+      const ocupacionKeyActual = ocupacionKey(sede.celula_id, departamento, calendarioCandidato);
+      const bloquesCelulaDepartamento = ocupacionPorCelulaDepartamento.get(ocupacionKeyActual) ?? [];
+      const bandaPreferida = fase === 'sede'
+        ? undefined
+        : bandaCelular ?? (esDepartamentoBajaCarga ? contexto.rotacionBajaCarga % 3 : undefined);
+      const costoCelular = fase === 'sede'
+        ? undefined
+        : (bloque: BloqueHorarioGenerado) => contarSolapesCelulaDepartamento(bloque, bloquesCelulaDepartamento) * 10000;
+      const resultado = buscarHorarioCompactado(
+        contexto.lanesPorDepartamentoCalendario.get(lanesKey)!,
+        contexto.franjasSede,
+        horas,
+        calendarioCandidato,
+        horariosGrupo,
+        bandaPreferida,
+        costoCelular
+      );
+      if (resultado) {
+        calendario = calendarioCandidato;
+        horario = resultado.horario;
+        if (fase === 'celula' && esDepartamentoBajaCarga && bandaCelular === undefined) contexto.rotacionBajaCarga++;
+        break;
+      }
+    }
+
+    if (!horario || !calendario) {
+      const detalleCalendario = programa.tipo_ciclo === 'semanal'
+        ? 'semanal'
+        : `semanas ${calendariosAProbar.join('/')}`;
+      errores.push(`No hay horario disponible para ${materia.nombre} en ${sede.nombre}, semestre ${semestre}, grupo ${grupo}, ${detalleCalendario}`);
+      return;
+    }
+
+    if (calendario !== 'semanal') horasUsadas[calendario] += horas;
+    horariosGrupo.push({ ...horario, calendario });
+    const ocupacionFinalKey = ocupacionKey(sede.celula_id, departamento, calendario);
+    if (!ocupacionPorCelulaDepartamento.has(ocupacionFinalKey)) ocupacionPorCelulaDepartamento.set(ocupacionFinalKey, []);
+    ocupacionPorCelulaDepartamento.get(ocupacionFinalKey)!.push({ ...horario, calendario });
+    const id = buildClaseId({
+      periodo,
+      programaId,
+      sedeId: sede.id,
+      semestre,
+      grupo,
+      materiaId: materia.id,
+      calendario,
+      diaSemana: horario.dia_semana,
+      horaInicio: horario.hora_inicio,
+      horaFin: horario.hora_fin,
+    });
+    statements.push(db.prepare(`
+      INSERT INTO clases (id, periodo, programa_id, materia_id, sede_id, grupo, calendario, dia_semana, hora_inicio, hora_fin, proyeccion_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(id, periodo, programaId, materia.id, sede.id, grupo, calendario, horario.dia_semana, horario.hora_inicio, horario.hora_fin, proyeccionClase?.id ?? null));
+    clasesCreadas++;
+  };
+
+  for (const contexto of contextosSede) {
+    for (const [departamento, unidadesDepartamento] of contexto.departamentosOrdenados) {
+      if (unidadesDepartamento.length !== contexto.mayorCargaDepartamento) continue;
       for (const unidad of ordenarUnidadesDepartamento(unidadesDepartamento)) {
-        const { semestre, grupo, materia } = unidad;
-        const horas = Number(materia.horas_semana);
-        const grupoKey = `${semestre}|${grupo}`;
-        if (!horasUsadasPorGrupo.has(grupoKey)) horasUsadasPorGrupo.set(grupoKey, { A: 0, B: 0 });
-        if (!horariosPorGrupo.has(grupoKey)) horariosPorGrupo.set(grupoKey, []);
-        const horasUsadas = horasUsadasPorGrupo.get(grupoKey)!;
-        const horariosGrupo = horariosPorGrupo.get(grupoKey)!;
-        const preferida: 'A' | 'B' = (sedeIndex + semestre + grupo) % 2 === 0 ? 'A' : 'B';
-        const calendariosAProbar: CalendarioClase[] = programa.tipo_ciclo === 'semanal'
-          ? ['semanal']
-          : ordenarCalendariosDisponibles(horasUsadas, horas, capacidadHoras, preferida);
-        if (calendariosAProbar.length === 0) {
-          errores.push(`No hay cupo para ${materia.nombre} en ${sede.nombre}, semestre ${semestre}, grupo ${grupo}`);
-          continue;
-        }
-        let calendario: CalendarioClase | null = null;
-        let horario: { dia_semana: DiaSemana; hora_inicio: string; hora_fin: string } | null = null;
-        for (const calendarioCandidato of calendariosAProbar) {
-          const lanesKey = `${departamento}|${calendarioCandidato}`;
-          if (!lanesPorDepartamentoCalendario.has(lanesKey)) lanesPorDepartamentoCalendario.set(lanesKey, []);
-          const resultado = buscarHorarioCompactado(
-            lanesPorDepartamentoCalendario.get(lanesKey)!,
-            franjasSede,
-            horas,
-            calendarioCandidato,
-            horariosGrupo,
-            esDepartamentoBajaCarga ? rotacionBajaCarga % 3 : undefined
-          );
-          if (resultado) {
-            calendario = calendarioCandidato;
-            horario = resultado.horario;
-            if (esDepartamentoBajaCarga) rotacionBajaCarga++;
-            break;
-          }
-        }
-        if (!horario || !calendario) {
-          const detalleCalendario = programa.tipo_ciclo === 'semanal'
-            ? 'semanal'
-            : `semanas ${calendariosAProbar.join('/')}`;
-          errores.push(`No hay horario disponible para ${materia.nombre} en ${sede.nombre}, semestre ${semestre}, grupo ${grupo}, ${detalleCalendario}`);
-          continue;
-        }
-        if (calendario !== 'semanal') horasUsadas[calendario] += horas;
-        horariosGrupo.push({ ...horario, calendario });
-        const id = buildClaseId({
-          periodo,
-          programaId,
-          sedeId: sede.id,
-          semestre,
-          grupo,
-          materiaId: materia.id,
-          calendario,
-          diaSemana: horario.dia_semana,
-          horaInicio: horario.hora_inicio,
-          horaFin: horario.hora_fin,
-        });
-        statements.push(db.prepare(`
-          INSERT INTO clases (id, periodo, programa_id, materia_id, sede_id, grupo, calendario, dia_semana, hora_inicio, hora_fin)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).bind(id, periodo, programaId, materia.id, sede.id, grupo, calendario, horario.dia_semana, horario.hora_inicio, horario.hora_fin));
-        clasesCreadas++;
+        programarUnidad(contexto, departamento, unidadesDepartamento, unidad, 'sede');
+      }
+    }
+  }
+
+  for (const contexto of contextosSede) {
+    for (const [departamento, unidadesDepartamento] of contexto.departamentosOrdenados) {
+      if (unidadesDepartamento.length === contexto.mayorCargaDepartamento) continue;
+      for (const unidad of ordenarUnidadesDepartamento(unidadesDepartamento)) {
+        programarUnidad(contexto, departamento, unidadesDepartamento, unidad, 'celula');
       }
     }
   }
@@ -974,19 +1199,19 @@ clases.post('/generar', async (c) => {
     success: true,
     periodo,
     programa_id: programaId,
-    sedes_procesadas: sedes.length,
+    sedes_procesadas: sedesConProyeccion.length,
     grupos_por_semestre: gruposPorSemestre,
     clases_creadas: clasesCreadas,
   }, 201);
 });
 
 clases.delete('/bulk', async (c) => {
-  const { periodo, programa_id, sede_id, semestre } = c.req.query();
-  if (!periodo && !programa_id && !sede_id && !semestre) {
+  const { periodo, programa_id, celula_id, sede_id, semestre } = c.req.query();
+  if (!periodo && !programa_id && !celula_id && !sede_id && !semestre) {
     return c.json({ error: 'Define al menos un filtro para borrar clases' }, 400);
   }
   const sedeIds = sede_id ? sede_id.split(',').map(s => s.trim()).filter(Boolean) : undefined;
-  const result = await deleteClasesPorFiltro(c.env.e_schedule_db, { periodo, programa_id, sede_ids: sedeIds, semestre });
+  const result = await deleteClasesPorFiltro(c.env.e_schedule_db, { periodo, programa_id, celula_id, sede_ids: sedeIds, semestre });
   return c.json({ success: true, ...result });
 });
 
