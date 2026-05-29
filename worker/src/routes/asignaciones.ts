@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import type { Bindings, Docente, Sede, Materia, Disponibilidad, Asignacion, Programa, ClaseAcademica } from '../types';
 import { validarAsignacion } from '../engine/validator';
-import { generarCandidatos } from '../engine/optimizer';
-import { horasBloque, haversineKm } from '../utils/haversine';
+import { generarCandidatos, verificarTiempoTraslado } from '../engine/optimizer';
+import { horasBloque, haversineKm, timeToMinutes } from '../utils/haversine';
 
 const asignaciones = new Hono<{ Bindings: Bindings }>();
 
@@ -23,6 +23,33 @@ function calendariosCompatibles(a?: CalendarioAsignacion, b?: CalendarioAsignaci
   const calA = a ?? 'semanal';
   const calB = b ?? 'semanal';
   return calA === 'semanal' || calB === 'semanal' || calA === calB;
+}
+
+function validarTrasladoEntreAsignaciones(
+  nuevaSede: Sede,
+  diaSemana: string,
+  horaInicio: string,
+  horaFin: string,
+  calendario: CalendarioAsignacion,
+  asignacionesDocente: Asignacion[],
+  sedes: Sede[]
+) {
+  for (const asignacion of asignacionesDocente) {
+    if (asignacion.dia_semana !== diaSemana) continue;
+    if (!calendariosCompatibles(asignacion.calendario, calendario)) continue;
+    const sedeAsignada = sedes.find(s => s.id === asignacion.sede_id);
+    if (!sedeAsignada) continue;
+
+    const nuevaDespues = timeToMinutes(horaInicio) >= timeToMinutes(asignacion.hora_fin);
+    const nuevaAntes = timeToMinutes(horaFin) <= timeToMinutes(asignacion.hora_inicio);
+    if (nuevaDespues && !verificarTiempoTraslado(sedeAsignada, nuevaSede, asignacion.hora_fin, horaInicio)) {
+      return false;
+    }
+    if (nuevaAntes && !verificarTiempoTraslado(nuevaSede, sedeAsignada, horaFin, asignacion.hora_inicio)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 async function eliminarAsignaciones(
@@ -665,6 +692,15 @@ asignaciones.post('/auto-bulk', async (c) => {
         asignacionesExistentes: asigDocente,
       });
       if (!validacion.valido) return null;
+      if (!validarTrasladoEntreAsignaciones(
+        sedeFija,
+        horarioFijo.dia_semana,
+        horarioFijo.hora_inicio,
+        horarioFijo.hora_fin,
+        calendarioClase,
+        asigDocente,
+        todasSedes
+      )) return null;
 
       const esForaneo = docente.celula_id !== sedeFija.celula_id;
       const distancia = sedeRef
@@ -775,10 +811,10 @@ asignaciones.post('/auto-bulk', async (c) => {
   ) => {
     const asignacionesDocente = asignacionesSimuladas.filter(a => a.docente_id === docente.id);
     const asignacionesMismoDia = asignacionesDocente.filter(a =>
-      a.sede_id === sede.id &&
       a.dia_semana === clase.dia_semana &&
       calendariosCompatibles(a.calendario, clase.calendario)
     );
+    const asignacionesMismaSedeDia = asignacionesMismoDia.filter(a => a.sede_id === sede.id);
     const materiasMismoDia = asignacionesMismoDia
       .map(a => materias.find(m => m.id === a.materia_id))
       .filter(Boolean) as MateriaExt[];
@@ -790,6 +826,19 @@ asignaciones.post('/auto-bulk', async (c) => {
       const materiaAsignada = materias.find(m => m.id === a.materia_id);
       return materia.semestre != null && materiaAsignada?.semestre === materia.semestre;
     }).length;
+    const rutasViables = asignacionesMismoDia.filter(a => {
+      const sedeAsignada = todasSedes.find(s => s.id === a.sede_id);
+      if (!sedeAsignada) return false;
+      const claseDespues = timeToMinutes(clase.hora_inicio) >= timeToMinutes(a.hora_fin);
+      const claseAntes = timeToMinutes(clase.hora_fin) <= timeToMinutes(a.hora_inicio);
+      if (claseDespues) return verificarTiempoTraslado(sedeAsignada, sede, a.hora_fin, clase.hora_inicio);
+      if (claseAntes) return verificarTiempoTraslado(sede, sedeAsignada, clase.hora_fin, a.hora_inicio);
+      return false;
+    }).length;
+    const rutasMismaCelula = asignacionesMismoDia.filter(a => {
+      const sedeAsignada = todasSedes.find(s => s.id === a.sede_id);
+      return sedeAsignada?.celula_id && sedeAsignada.celula_id === sede.celula_id;
+    }).length;
     const horasClase = horasBloque(clase.hora_inicio, clase.hora_fin);
     const horasDisponibles = docente.max_horas - horasSimuladas[docente.id];
 
@@ -797,10 +846,12 @@ asignaciones.post('/auto-bulk', async (c) => {
     if (docente.departamento_id && materia.departamento_id && docente.departamento_id === materia.departamento_id) {
       score += 60;
     }
-    score += asignacionesMismoDia.length * 70;
+    score += asignacionesMismaSedeDia.length * 80;
+    score += rutasViables * 90;
+    score += rutasMismaCelula * 25;
     score += clasesMismoDepartamento * 90;
-    if (asignacionesMismoDia.length === 1) score += 80;
-    if (asignacionesMismoDia.length >= 2) score += 40;
+    if (asignacionesMismaSedeDia.length === 1) score += 80;
+    if (asignacionesMismaSedeDia.length >= 2) score += 40;
     if (clasesMismoSemestre === 1) {
       score -= asignacionesMismoDia.length > 0 ? 10 : 25;
     } else if (clasesMismoSemestre >= 2) {
