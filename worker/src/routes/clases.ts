@@ -634,12 +634,14 @@ const CLASE_SELECT = `
     m.horas_semana,
     m.semestre,
     m.departamento_id,
+    d.nombre as departamento_nombre,
     s.nombre as sede_nombre,
     s.celula_id,
     c.nombre as celula_nombre
   FROM clases cl
   JOIN programas p ON cl.programa_id = p.id
   JOIN materias m ON cl.materia_id = m.id
+  LEFT JOIN departamentos d ON m.departamento_id = d.id
   JOIN sedes s ON cl.sede_id = s.id
   LEFT JOIN celulas c ON s.celula_id = c.id
 `;

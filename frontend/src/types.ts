@@ -134,6 +134,7 @@ export interface ClaseAcademica {
   horas_semana?: number;
   semestre?: number | null;
   departamento_id?: string | null;
+  departamento_nombre?: string | null;
   sede_id: string;
   sede_nombre?: string | null;
   celula_id?: string | null;

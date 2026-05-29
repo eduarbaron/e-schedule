@@ -43,11 +43,12 @@ import {
   useUpdateClaseTemplate,
 } from '../api/hooks';
 import api from '../api/client';
-import type { Celula, ClaseAcademica, ClaseTemplate, Materia, Programa, Sede } from '../types';
+import type { Asignacion, Celula, ClaseAcademica, ClaseTemplate, Materia, Programa, Sede } from '../types';
 import { DIA_LABELS } from '../types';
 import { useConfirm } from '../components/ConfirmProvider';
 import { usePeriodoTrabajo } from '../context/PeriodoContext';
 import { exportHorarioProgramaExcel } from '../utils/horarioExcelExport';
+import { exportDocentesProjectionExcel } from '../utils/docentesProjectionExcelExport';
 
 const DIAS = ['L', 'M', 'X', 'J', 'V', 'S'];
 const HORAS = Array.from({ length: 17 }, (_, i) => `${String(i + 6).padStart(2, '0')}:00`);
@@ -171,7 +172,7 @@ export function Clases() {
   const [opened, { open, close }] = useDisclosure(false);
   const [generatorOpened, { open: openGenerator, close: closeGenerator }] = useDisclosure(false);
   const [templateOpened, { open: openTemplate, close: closeTemplate }] = useDisclosure(false);
-  const [exporting, setExporting] = useState<'proyeccion' | 'asignaciones' | null>(null);
+  const [exporting, setExporting] = useState<'proyeccion' | 'asignaciones' | 'docentes' | null>(null);
 
   const [form, setForm] = useState(defaultClaseForm);
   const [generatorForm, setGeneratorForm] = useState(defaultGeneratorForm);
@@ -675,6 +676,38 @@ export function Clases() {
     }
   };
 
+  const handleExportDocentesProjection = async () => {
+    if (!periodoFinal) {
+      notifications.show({ message: 'Selecciona un periodo de trabajo', color: 'red' });
+      return;
+    }
+
+    const clasesFiltradas = (clases as ClaseAcademica[]).filter(clase => clase.estado !== 'cancelada');
+    if (clasesFiltradas.length === 0) {
+      notifications.show({ message: 'No hay clases activas para exportar con los filtros actuales', color: 'orange' });
+      return;
+    }
+
+    setExporting('docentes');
+    try {
+      const asignacionesRes = await api.get('/asignaciones', { params: { periodo: periodoFinal } });
+      const result = await exportDocentesProjectionExcel({
+        clases: clasesFiltradas,
+        asignaciones: asignacionesRes.data as Asignacion[],
+        materias: materias as Materia[],
+        periodo: periodoSeleccionado ?? null,
+      });
+      notifications.show({
+        message: `Proyeccion detallada generada: ${result.detalle} detalle(s), ${result.resumen} resumen(es)`,
+        color: 'green',
+      });
+    } catch (e: any) {
+      notifications.show({ message: e.response?.data?.error || 'Error al exportar proyeccion detallada', color: 'red' });
+    } finally {
+      setExporting(null);
+    }
+  };
+
   const handleDelete = async (clase: ClaseAcademica) => {
     if (!(await confirm({
       title: 'Eliminar clase',
@@ -715,6 +748,11 @@ export function Clases() {
               </Menu.Item>
               <Menu.Item leftSection={<FileSpreadsheet size={14} />} onClick={() => handleExportExcel('asignaciones')}>
                 Horario con asignaciones
+              </Menu.Item>
+              <Menu.Divider />
+              <Menu.Label>Planeacion docente</Menu.Label>
+              <Menu.Item leftSection={<FileSpreadsheet size={14} />} onClick={handleExportDocentesProjection}>
+                Proyeccion detallada de docentes
               </Menu.Item>
             </Menu.Dropdown>
           </Menu>
