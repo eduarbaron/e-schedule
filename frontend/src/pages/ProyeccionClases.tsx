@@ -14,6 +14,7 @@ import {
   useProyeccionesClases,
 } from '../api/hooks';
 import { usePeriodoTrabajo } from '../context/PeriodoContext';
+import { useConfirm } from '../components/ConfirmProvider';
 import { PlantillasClases } from './PlantillasClases';
 import type { ClaseTemplate, Programa, Sede } from '../types';
 
@@ -45,6 +46,7 @@ function parseCount(json: string | null | undefined) {
 }
 
 export function ProyeccionClases() {
+  const confirm = useConfirm();
   const { periodoId } = usePeriodoTrabajo();
   const { data: programas = [] } = useProgramas();
   const [programaId, setProgramaId] = useState('');
@@ -118,11 +120,13 @@ export function ProyeccionClases() {
 
   const handleDeletePrograma = async () => {
     if (!periodoId || !programaId) return;
-    const confirmed = window.confirm(
-      filtrosActivos
+    const confirmed = await confirm({
+      title: filtrosActivos ? 'Borrar selección' : 'Borrar programa',
+      message: filtrosActivos
         ? 'Se eliminará la proyección que coincida con los filtros activos para este programa y periodo. ¿Deseas continuar?'
-        : 'Se eliminará toda la proyección del programa seleccionado para este periodo. ¿Deseas continuar?'
-    );
+        : 'Se eliminará toda la proyección del programa seleccionado para este periodo. ¿Deseas continuar?',
+      confirmLabel: 'Eliminar',
+    });
     if (!confirmed) return;
     try {
       const res = await bulkDelete.mutateAsync({
@@ -357,9 +361,15 @@ export function ProyeccionClases() {
                         <ActionIcon
                           color="red"
                           variant="subtle"
+                          loading={deleteProyeccion.isPending}
                           onClick={async () => {
-                            await deleteProyeccion.mutateAsync(item.id);
-                            notifications.show({ message: 'Proyección eliminada', color: 'green' });
+                            if (!(await confirm({ title: 'Eliminar proyección', message: '¿Eliminar esta proyección?', confirmLabel: 'Eliminar' }))) return;
+                            try {
+                              await deleteProyeccion.mutateAsync(item.id);
+                              notifications.show({ message: 'Proyección eliminada', color: 'green' });
+                            } catch (e: any) {
+                              notifications.show({ message: e.response?.data?.error ?? 'No fue posible eliminar la proyección', color: 'red' });
+                            }
                           }}
                         >
                           <Trash2 size={16} />
